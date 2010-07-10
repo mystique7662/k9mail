@@ -139,6 +139,11 @@
         </javac>
     </target>
 
+    <target name="jar" depends="compile">
+        <jar destfile="bin/k9-imapstore.jar" basedir="bin/classes"
+        />
+    </target>
+
     <target name="help">
         <!-- displays starts at col 13
               |13                                                              80| -->
