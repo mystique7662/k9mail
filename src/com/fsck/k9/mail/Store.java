@@ -1,7 +1,7 @@
 
 package com.fsck.k9.mail;
 
-import android.app.Application;
+import android.content.Context;
 
 import com.fsck.k9.Account;
 import com.fsck.k9.mail.store.ImapStore;
@@ -86,7 +86,7 @@ public abstract class Store
     /**
      * Get an instance of a local mail store.
      */
-    public synchronized static LocalStore getLocalInstance(Account account, Application application) throws MessagingException
+    public synchronized static LocalStore getLocalInstance(Account account, Context application) throws MessagingException
     {
         String uri = account.getLocalStoreUri();
 

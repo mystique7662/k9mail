@@ -28,7 +28,7 @@ import java.lang.reflect.Method;
 
 public class K9 extends Application
 {
-    public static Application app = null;
+    public static Context app = null;
     public static File tempDirectory;
     public static final String LOG_TAG = "k9";
 

@@ -118,7 +118,7 @@ public final class TrustManagerFactory
         try
         {
             javax.net.ssl.TrustManagerFactory tmf = javax.net.ssl.TrustManagerFactory.getInstance("X509");
-            Application app = K9.app;
+            Context app = K9.app;
             keyStoreFile = new File(app.getDir("KeyStore", Context.MODE_PRIVATE) + File.separator + "KeyStore.bks");
             keyStore = KeyStore.getInstance(KeyStore.getDefaultType());
             java.io.FileInputStream fis;
