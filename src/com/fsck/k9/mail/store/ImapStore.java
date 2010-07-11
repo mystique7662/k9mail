@@ -93,7 +93,7 @@ public class ImapStore extends Store
     private volatile String mCombinedPrefix = null;
     private volatile String mPathDelimeter = null;
 
-    private static final SimpleDateFormat RFC3501_DATE = new SimpleDateFormat("dd-MMM-yyyy", Locale.US);
+    public static final SimpleDateFormat RFC3501_DATE = new SimpleDateFormat("dd-MMM-yyyy", Locale.US);
 
     private LinkedList<ImapConnection> mConnections =
         new LinkedList<ImapConnection>();
@@ -482,7 +482,7 @@ public class ImapStore extends Store
     }
 
 
-    class ImapFolder extends Folder
+    public class ImapFolder extends Folder
     {
         private String mName;
         protected volatile int mMessageCount = -1;
@@ -1065,7 +1065,7 @@ public class ImapStore extends Store
             return search(searcher, listener);
         }
 
-        private Message[] search(ImapSearcher searcher, MessageRetrievalListener listener) throws MessagingException
+        protected Message[] search(ImapSearcher searcher, MessageRetrievalListener listener) throws MessagingException
         {
 
             checkOpen();
@@ -3577,7 +3577,7 @@ public class ImapStore extends Store
         }
 
     }
-    private interface ImapSearcher
+   public interface ImapSearcher
     {
         List<ImapResponse> search() throws IOException, MessagingException;
     }
