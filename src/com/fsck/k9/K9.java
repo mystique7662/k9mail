@@ -373,7 +373,7 @@ public class K9 extends Application
          * Enable background sync of messages
          */
 
-        setServicesEnabled(this);
+        /* setServicesEnabled(this); */
 
         MessagingController.getInstance(this).addListener(new MessagingListener()
         {
