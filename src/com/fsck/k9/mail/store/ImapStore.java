@@ -175,7 +175,7 @@ public class ImapStore extends Store
         {
             try
             {
-                String[] userInfoParts = uri.getUserInfo().split(":");
+                String[] userInfoParts = uri.getRawUserInfo().split(":");
                 if (userInfoParts.length == 2)
                 {
                     mAuthType = AuthType.PLAIN;
