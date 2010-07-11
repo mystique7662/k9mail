@@ -1780,13 +1780,17 @@ public class ImapStore extends Store
 
         }
 
+        @Override
+        public void appendMessages(Message[] messages) throws MessagingException {
+            appendMessages(messages, false);
+        }
+
         /**
          * Appends the given messages to the selected folder. This implementation also determines
          * the new UID of the given message on the IMAP server and sets the Message's UID to the
          * new server UID.
          */
-        @Override
-        public void appendMessages(Message[] messages) throws MessagingException
+        public void appendMessages(Message[] messages, boolean determineUids) throws MessagingException
         {
             checkOpen();
             try
@@ -1820,16 +1824,17 @@ public class ImapStore extends Store
                     }
                     while (response.mTag == null);
 
-                    String newUid = getUidFromMessageId(message);
-                    if (K9.DEBUG)
-                        Log.d(K9.LOG_TAG, "Got UID " + newUid + " for message for " + getLogId());
+                    if (determineUids) {
+                        String newUid = getUidFromMessageId(message);
 
-                    if (newUid != null)
-                    {
-                        message.setUid(newUid);
+                        if (K9.DEBUG)
+                            Log.d(K9.LOG_TAG, "Got UID " + newUid + " for message for " + getLogId());
+
+                        if (newUid != null)
+                        {
+                            message.setUid(newUid);
+                        }
                     }
-
-
                 }
             }
             catch (IOException ioe)
