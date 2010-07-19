@@ -1,5 +1,4 @@
 package com.fsck.k9.activity;
-// import android.os.Debug;
 
 import java.util.ArrayList;
 import java.util.Collections;
@@ -73,13 +72,10 @@ import com.fsck.k9.mail.store.LocalStore.LocalMessage;
 
 
 /**
- * MessageList is the primary user interface for the program. This
- * Activity shows a list of messages.
- * From this Activity the user can perform all standard message
- * operations.
- *
+ * MessageList is the primary user interface for the program. This Activity
+ * shows a list of messages.
+ * From this Activity the user can perform all standard message operations.
  */
-
 public class MessageList
         extends K9Activity
         implements OnClickListener, AdapterView.OnItemClickListener
@@ -120,12 +116,14 @@ public class MessageList
     private GestureDetector gestureDetector;
     private View.OnTouchListener gestureListener;
     /**
-    * Stores the name of the folder that we want to open as soon as possible
-    * after load.
+     * Stores the name of the folder that we want to open as soon as possible
+     * after load.
      */
     private String mFolderName;
 
-    /* if we're doing a search, this contains the query string */
+    /**
+     * If we're doing a search, this contains the query string.
+     */
     private String mQueryString;
     private Flag[] mQueryFlags = null;
     private Flag[] mForbiddenFlags = null;
@@ -154,6 +152,7 @@ public class MessageList
     private FontSizes mFontSizes = K9.getFontSizes();
 
     private Bundle mState = null;
+    private MessageInfoHolder mSelectedMessage = null;
 
     class MessageListHandler extends Handler
     {
@@ -183,12 +182,10 @@ public class MessageList
                     toggleBatchButtons();
                 }
             });
-
         }
 
         public void addMessages(final List<MessageInfoHolder> messages)
         {
-
             final boolean wasEmpty = mAdapter.messages.isEmpty();
             runOnUiThread(new Runnable()
             {
@@ -196,11 +193,13 @@ public class MessageList
                 {
                     for (final MessageInfoHolder message : messages)
                     {
-
                         if (mFolderName == null || (message.folder != null && message.folder.name.equals(mFolderName)))
                         {
-
-                            int index = Collections.binarySearch(mAdapter.messages, message);
+                            int index;
+                            synchronized (mAdapter.messages)
+                            {
+                                index = Collections.binarySearch(mAdapter.messages, message);
+                            }
 
                             if (index < 0)
                             {
@@ -208,7 +207,6 @@ public class MessageList
                             }
 
                             mAdapter.messages.add(index, message);
-
                         }
                     }
 
@@ -233,19 +231,24 @@ public class MessageList
                 }
             });
         }
+
         private void resetUnreadCountOnThread()
         {
             if (mQueryString != null)
             {
                 int unreadCount = 0;
-                for (MessageInfoHolder holder : mAdapter.messages)
+                synchronized (mAdapter.messages)
                 {
-                    unreadCount += holder.read ? 0 : 1;
+                    for (MessageInfoHolder holder : mAdapter.messages)
+                    {
+                        unreadCount += holder.read ? 0 : 1;
+                    }
                 }
                 mUnreadMessageCount = unreadCount;
                 refreshTitleOnThread();
             }
         }
+
         private void sortMessages()
         {
             runOnUiThread(new Runnable()
@@ -259,19 +262,16 @@ public class MessageList
                     mAdapter.notifyDataSetChanged();
                 }
             });
-
         }
 
         public void folderLoading(String folder, boolean loading)
         {
-
             if (mCurrentFolder != null && mCurrentFolder.name.equals(folder))
             {
                 mCurrentFolder.loading = loading;
             }
-
-
         }
+
         private void refreshTitle()
         {
             runOnUiThread(new Runnable()
@@ -282,11 +282,13 @@ public class MessageList
                 }
             });
         }
+
         private void refreshTitleOnThread()
         {
             setWindowTitle();
             setWindowProgress();
         }
+
         private void setWindowProgress()
         {
             int level = Window.PROGRESS_END;
@@ -302,9 +304,9 @@ public class MessageList
 
             getWindow().setFeatureInt(Window.FEATURE_PROGRESS, level);
         }
+
         private void setWindowTitle()
         {
-
             String displayName;
 
             if (mFolderName != null)
@@ -317,7 +319,6 @@ public class MessageList
                 }
 
                 String dispString = mAdapter.mListener.formatHeader(MessageList.this, getString(R.string.message_list_title, mAccount.getDescription(), displayName), mUnreadMessageCount, getTimeFormat());
-
                 setTitle(dispString);
             }
             else if (mQueryString != null)
@@ -344,19 +345,12 @@ public class MessageList
                 }
             });
         }
-
     }
-
-    /**
-    * This class is responsible for loading the list of local messages for a
-    * given folder
-     */
 
     public static void actionHandleFolder(Context context, Account account, String folder)
     {
         Intent intent = actionHandleFolderIntent(context,account,folder);
         context.startActivity(intent);
-
     }
 
     public static Intent actionHandleFolderIntent(Context context, Account account, String folder)
@@ -386,7 +380,6 @@ public class MessageList
         intent.putExtra(EXTRA_INTEGRATE, integrate);
         intent.putExtra(EXTRA_TITLE, title);
         context.startActivity(intent);
-
     }
 
     public static void actionHandle(Context context, String title, SearchSpecification searchSpecification)
@@ -406,7 +399,6 @@ public class MessageList
         intent.putExtra(EXTRA_FOLDER_NAMES, searchSpecification.getFolderNames());
         intent.putExtra(EXTRA_TITLE, title);
         context.startActivity(intent);
-
     }
 
     public void onItemClick(AdapterView<?> parent, View view, int position, long id)
@@ -417,12 +409,11 @@ public class MessageList
             return;
         }
 
-
         MessageInfoHolder message = (MessageInfoHolder) mAdapter.getItem(position);
         if (mSelectedCount > 0)
         {
-            // In multiselect mode make sure that clicking on the item results in
-            // toggling the 'selected' checkbox
+            // In multiselect mode make sure that clicking on the item results
+            // in toggling the 'selected' checkbox.
             setSelected(message, !message.selected);
             return;
         }
@@ -436,9 +427,7 @@ public class MessageList
     @Override
     public void onCreate(Bundle savedInstanceState)
     {
-        // Debug.startMethodTracing("k9");
         super.onCreate(savedInstanceState);
-
         mInflater = getLayoutInflater();
         initializeLayout();
         onNewIntent(getIntent());
@@ -449,9 +438,8 @@ public class MessageList
     {
         setIntent(intent); // onNewIntent doesn't autoset our "internal" intent
 
-        // Only set "touchable" when we're first starting up the
-        // activity. otherwise we get force closes when the user
-        // toggles it midstream
+        // Only set "touchable" when we're first starting up the activity.
+        // Otherwise we get force closes when the user toggles it midstream.
         mTouchView = K9.messageListTouchable();
 
         String accountUuid = intent.getStringExtra(EXTRA_ACCOUNT);
@@ -484,9 +472,8 @@ public class MessageList
         mFolderNames = intent.getStringArrayExtra(EXTRA_FOLDER_NAMES);
         mTitle = intent.getStringExtra(EXTRA_TITLE);
 
-        // Take the initial folder into account only if we are *not* restoring the
-        // activity already
-
+        // Take the initial folder into account only if we are *not* restoring
+        // the activity already.
         if (mFolderName == null && mQueryString == null)
         {
             mFolderName = mAccount.getAutoExpandFolderName();
@@ -508,15 +495,12 @@ public class MessageList
 
         mController = MessagingController.getInstance(getApplication());
         mListView.setAdapter(mAdapter);
-
-
     }
 
     @Override
     public void onPause()
     {
         super.onPause();
-        //Debug.stopMethodTracing();
         mController.removeListener(mAdapter.mListener);
         saveListState();
     }
@@ -552,9 +536,9 @@ public class MessageList
     }
 
     /**
-    * On resume we refresh
-    * messages for the folder that is currently open. This guarantees that things
-    * like unread message count and read status are updated.
+     * On resume we refresh messages for the folder that is currently open.
+     * This guarantees that things like unread message count and read status
+     * are updated.
      */
     @Override
     public void onResume()
@@ -634,11 +618,11 @@ public class MessageList
         mListView.setOnTouchListener(gestureListener);
     }
 
-    @Override public Object onRetainNonConfigurationInstance()
+    @Override
+    public Object onRetainNonConfigurationInstance()
     {
         return mAdapter.messages;
     }
-
 
     @Override
     public void onBackPressed()
@@ -663,7 +647,6 @@ public class MessageList
         }
     }
 
-
     @Override
     public boolean onKeyDown(int keyCode, KeyEvent event)
     {
@@ -679,12 +662,10 @@ public class MessageList
             onBackPressed();
             return true;
         }
-        //Shortcuts that work no matter what is selected
 
+        // Shortcuts that work no matter what is selected
         switch (keyCode)
         {
-
-
             case KeyEvent.KEYCODE_DPAD_LEFT:
             {
                 if (mBatchButtonArea.hasFocus())
@@ -707,40 +688,33 @@ public class MessageList
                     return true;
                 }
             }
-
-
             case KeyEvent.KEYCODE_C:
             {
                 onCompose();
                 return true;
             }
-
             case KeyEvent.KEYCODE_Q:
-                //case KeyEvent.KEYCODE_BACK:
             {
                 onShowFolderList();
                 return true;
             }
-
             case KeyEvent.KEYCODE_O:
             {
                 onCycleSort();
                 return true;
             }
-
             case KeyEvent.KEYCODE_I:
             {
                 onToggleSortAscending();
                 return true;
             }
-
             case KeyEvent.KEYCODE_H:
             {
                 Toast toast = Toast.makeText(this, R.string.message_list_help_key, Toast.LENGTH_LONG);
                 toast.show();
                 return true;
             }
-        }//switch
+        }
 
         boolean result;
         int position = mListView.getSelectedItemPosition();
@@ -749,7 +723,6 @@ public class MessageList
             if (position >= 0)
             {
                 MessageInfoHolder message = (MessageInfoHolder) mAdapter.getItem(position);
-
 
                 if (message != null)
                 {
@@ -760,61 +733,51 @@ public class MessageList
                             onDelete(message, position);
                             return true;
                         }
-
                         case KeyEvent.KEYCODE_S:
                         {
                             setSelected(message, !message.selected);
                             return true;
                         }
-
                         case KeyEvent.KEYCODE_D:
                         {
                             onDelete(message, position);
                             return true;
                         }
-
                         case KeyEvent.KEYCODE_F:
                         {
                             onForward(message);
                             return true;
                         }
-
                         case KeyEvent.KEYCODE_A:
                         {
                             onReplyAll(message);
                             return true;
                         }
-
                         case KeyEvent.KEYCODE_R:
                         {
                             onReply(message);
                             return true;
                         }
-
                         case KeyEvent.KEYCODE_G:
                         {
                             onToggleFlag(message);
                             return true;
                         }
-
                         case KeyEvent.KEYCODE_M:
                         {
                             onMove(message);
                             return true;
                         }
-
                         case KeyEvent.KEYCODE_V:
                         {
                             onArchive(message);
                             return true;
                         }
-
                         case KeyEvent.KEYCODE_Y:
                         {
                             onCopy(message);
                             return true;
                         }
-
                         case KeyEvent.KEYCODE_Z:
                         {
                             onToggleRead(message);
@@ -830,7 +793,7 @@ public class MessageList
         }
 
         return result;
-    }//onKeyDown
+    }
 
     private void onOpenMessage(MessageInfoHolder message)
     {
@@ -843,30 +806,31 @@ public class MessageList
             // Need to get the list before the sort starts
             ArrayList<MessageReference> messageRefs = new ArrayList<MessageReference>();
 
-            for (MessageInfoHolder holder : mAdapter.messages)
+            synchronized (mAdapter.messages)
             {
-                MessageReference ref = holder.message.makeMessageReference();
-                messageRefs.add(ref);
+                for (MessageInfoHolder holder : mAdapter.messages)
+                {
+                    MessageReference ref = holder.message.makeMessageReference();
+                    messageRefs.add(ref);
+                }
             }
             MessageReference ref = message.message.makeMessageReference();
             Log.i(K9.LOG_TAG, "MessageList sending message " + ref);
 
             MessageView.actionView(this, ref, messageRefs);
         }
-        /*
-        * We set read=true here for UI performance reasons. The actual value will
-        * get picked up on the refresh when the Activity is resumed but that may
-        * take a second or so and we don't want this to show and then go away. I've
-        * gone back and forth on this, and this gives a better UI experience, so I
-        * am putting it back in.
-         */
 
+        /*
+         * We set read=true here for UI performance reasons. The actual value
+         * will get picked up on the refresh when the Activity is resumed but
+         * that may take a second or so and we don't want this to show and
+         * then go away. I've gone back and forth on this, and this gives a
+         * better UI experience, so I am putting it back in.
+         */
         if (!message.read)
         {
             message.read = true;
-            mHandler.sortMessages();
         }
-
     }
 
     private void onAccounts()
@@ -883,14 +847,16 @@ public class MessageList
 
     private void onCompose()
     {
-
         if (mQueryString != null)
-        {// if we have a query string, we don't have an account, to let compose start the default action
+        {
+            /*
+             * If we have a query string, we don't have an account to let
+             * compose start the default action.
+             */
             MessageCompose.actionCompose(this, null);
         }
         else
         {
-
             MessageCompose.actionCompose(this, mAccount);
         }
     }
@@ -899,7 +865,6 @@ public class MessageList
     {
         Prefs.actionPrefs(this);
     }
-
 
     private void onEditAccount()
     {
@@ -930,9 +895,7 @@ public class MessageList
         toast.show();
 
         mHandler.sortMessages();
-
     }
-
 
     private void onCycleSort()
     {
@@ -973,7 +936,6 @@ public class MessageList
         mAdapter.removeMessage(holder);
         mController.deleteMessages(new Message[] { holder.message }, null);
     }
-
 
     private void onMove(MessageInfoHolder holder)
     {
@@ -1117,7 +1079,6 @@ public class MessageList
         }
     }
 
-
     private void onMoveChosen(MessageInfoHolder holder, String folderName)
     {
         if (mController.isMoveCapable(holder.message.getFolder().getAccount()) == true && folderName != null)
@@ -1131,7 +1092,6 @@ public class MessageList
         }
     }
 
-
     private void onCopyChosen(MessageInfoHolder holder, String folderName)
     {
         if (mController.isCopyCapable(holder.message.getFolder().getAccount()) == true && folderName != null)
@@ -1140,7 +1100,6 @@ public class MessageList
                                     holder.message.getFolder().getName(), holder.message, folderName, null);
         }
     }
-
 
     private void onReply(MessageInfoHolder holder)
     {
@@ -1167,7 +1126,6 @@ public class MessageList
         mController.expunge(account, folderName, null);
     }
 
-
     @Override
     public Dialog onCreateDialog(int id)
     {
@@ -1175,7 +1133,6 @@ public class MessageList
         {
             case DIALOG_MARK_ALL_AS_READ:
                 return createMarkAllAsReadDialog();
-
         }
 
         return super.onCreateDialog(id);
@@ -1187,15 +1144,18 @@ public class MessageList
         switch (id)
         {
             case DIALOG_MARK_ALL_AS_READ:
+            {
                 if (mCurrentFolder != null)
                 {
                     ((AlertDialog)dialog).setMessage(getString(R.string.mark_all_as_read_dlg_instructions_fmt,
                                                      mCurrentFolder.displayName));
                 }
                 break;
-
+            }
             default:
+            {
                 super.onPrepareDialog(id, dialog);
+            }
         }
     }
 
@@ -1213,17 +1173,16 @@ public class MessageList
 
                 try
                 {
-
                     mController.markAllMessagesRead(mAccount, mCurrentFolder.name);
 
-                    for (MessageInfoHolder holder : mAdapter.messages)
+                    synchronized (mAdapter.messages)
                     {
-                        holder.read = true;
+                        for (MessageInfoHolder holder : mAdapter.messages)
+                        {
+                            holder.read = true;
+                        }
                     }
-
                     mHandler.sortMessages();
-
-
                 }
                 catch (Exception e)
                 {
@@ -1231,7 +1190,6 @@ public class MessageList
                 }
             }
         })
-
                .setNegativeButton(R.string.cancel_action, new DialogInterface.OnClickListener()
         {
             public void onClick(DialogInterface dialog, int whichButton)
@@ -1239,7 +1197,6 @@ public class MessageList
                 dismissDialog(DIALOG_MARK_ALL_AS_READ);
             }
         })
-
                .create();
     }
 
@@ -1252,7 +1209,6 @@ public class MessageList
 
     private void onToggleFlag(MessageInfoHolder holder)
     {
-
         mController.setFlag(holder.message.getFolder().getAccount(), holder.message.getFolder().getName(), new String[] { holder.uid }, Flag.FLAGGED, !holder.flagged);
         holder.flagged = !holder.flagged;
         mHandler.sortMessages();
@@ -1275,79 +1231,86 @@ public class MessageList
         int itemId = item.getItemId();
         switch (itemId)
         {
-
             case R.id.compose:
+            {
                 onCompose();
-
                 return true;
-
+            }
             case R.id.accounts:
+            {
                 onAccounts();
-
                 return true;
-
+            }
             case R.id.set_sort_date:
+            {
                 changeSort(SORT_TYPE.SORT_DATE);
-
                 return true;
-
+            }
             case R.id.set_sort_subject:
+            {
                 changeSort(SORT_TYPE.SORT_SUBJECT);
-
                 return true;
-
+            }
             case R.id.set_sort_sender:
+            {
                 changeSort(SORT_TYPE.SORT_SENDER);
-
                 return true;
-
+            }
             case R.id.set_sort_flag:
+            {
                 changeSort(SORT_TYPE.SORT_FLAGGED);
-
                 return true;
-
+            }
             case R.id.set_sort_unread:
+            {
                 changeSort(SORT_TYPE.SORT_UNREAD);
-
                 return true;
-
+            }
             case R.id.set_sort_attach:
+            {
                 changeSort(SORT_TYPE.SORT_ATTACHMENT);
-
                 return true;
-
+            }
             case R.id.select_all:
             case R.id.batch_select_all:
+            {
                 setAllSelected(true);
                 toggleBatchButtons();
                 return true;
-
+            }
             case R.id.batch_deselect_all:
+            {
                 setAllSelected(false);
                 toggleBatchButtons();
                 return true;
-
+            }
             case R.id.batch_delete_op:
+            {
                 deleteSelected();
                 return true;
-
+            }
             case R.id.batch_mark_read_op:
+            {
                 flagSelected(Flag.SEEN, true);
                 return true;
-
+            }
             case R.id.batch_mark_unread_op:
+            {
                 flagSelected(Flag.SEEN, false);
                 return true;
-
+            }
             case R.id.batch_flag_op:
+            {
                 flagSelected(Flag.FLAGGED, true);
                 return true;
-
+            }
             case R.id.batch_unflag_op:
+            {
                 flagSelected(Flag.FLAGGED, false);
                 return true;
-
+            }
             case R.id.settings:
+            {
                 if (mQueryString == null)
                 {
                     break;
@@ -1357,15 +1320,17 @@ public class MessageList
                  * Fall-through in search results view. Otherwise a sub-menu
                  * with only one option would be opened.
                  */
-
+            }
             case R.id.app_settings:
+            {
                 onEditPrefs();
                 return true;
+            }
         }
 
         if (mQueryString != null)
         {
-            // none of the options after this point are "safe" for search results
+            // None of the options after this point are "safe" for search results
             //TODO: This is not true for "unread" and "starred" searches in regular folders
             return false;
         }
@@ -1373,64 +1338,76 @@ public class MessageList
         switch (itemId)
         {
             case R.id.check_mail:
+            {
                 if (mFolderName != null)
                 {
                     checkMail(mAccount, mFolderName);
                 }
                 return true;
+            }
             case R.id.send_messages:
+            {
                 sendMail(mAccount);
                 return true;
-
+            }
             case R.id.list_folders:
+            {
                 onShowFolderList();
-
                 return true;
-
+            }
             case R.id.mark_all_as_read:
+            {
                 if (mFolderName != null)
                 {
                     onMarkAllAsRead(mAccount, mFolderName);
                 }
                 return true;
-
+            }
             case R.id.folder_settings:
+            {
                 if (mFolderName != null)
                 {
                     FolderSettings.actionSettings(this, mAccount, mFolderName);
                 }
                 return true;
-
+            }
             case R.id.account_settings:
+            {
                 onEditAccount();
-
                 return true;
-
+            }
             case R.id.batch_copy_op:
+            {
                 onCopyBatch();
                 return true;
-
+            }
             case R.id.batch_archive_op:
+            {
                 onArchiveBatch();
                 return true;
-
+            }
             case R.id.batch_spam_op:
+            {
                 onSpamBatch();
                 return true;
-
+            }
             case R.id.batch_move_op:
+            {
                 onMoveBatch();
                 return true;
-
+            }
             case R.id.expunge:
+            {
                 if (mCurrentFolder != null)
                 {
                     onExpunge(mAccount, mCurrentFolder.name);
                 }
                 return true;
-
+            }
             default:
+            {
                 return super.onOptionsItemSelected(item);
+            }
         }
     }
 
@@ -1440,7 +1417,6 @@ public class MessageList
                                       R.id.batch_select_all, R.id.batch_deselect_all
                                     };
 
-
     private void setOpsState(Menu menu, boolean state, boolean enabled)
     {
         for (int id : batch_ops)
@@ -1449,7 +1425,6 @@ public class MessageList
             menu.findItem(id).setEnabled(enabled);
         }
     }
-
 
     @Override
     public boolean onPrepareOptionsMenu(Menu menu)
@@ -1515,84 +1490,94 @@ public class MessageList
     public boolean onContextItemSelected(MenuItem item)
     {
         AdapterContextMenuInfo info = (AdapterContextMenuInfo) item.getMenuInfo();
-        MessageInfoHolder holder = (MessageInfoHolder) mAdapter.getItem(info.position);
+        MessageInfoHolder holder = mSelectedMessage;
+        // don't need this anymore
+        mSelectedMessage = null;
+        if (holder == null)
+        {
+            holder = (MessageInfoHolder) mAdapter.getItem(info.position);
+        }
 
         switch (item.getItemId())
         {
             case R.id.open:
+            {
                 onOpenMessage(holder);
                 break;
-
+            }
             case R.id.select:
+            {
                 setSelected(holder, true);
                 break;
-
+            }
             case R.id.deselect:
+            {
                 setSelected(holder, false);
                 break;
-
+            }
             case R.id.delete:
+            {
                 onDelete(holder, info.position);
                 break;
-
+            }
             case R.id.reply:
+            {
                 onReply(holder);
                 break;
-
+            }
             case R.id.reply_all:
+            {
                 onReplyAll(holder);
-
                 break;
-
+            }
             case R.id.forward:
+            {
                 onForward(holder);
-
                 break;
-
+            }
             case R.id.mark_as_read:
+            {
                 onToggleRead(holder);
-
                 break;
-
+            }
             case R.id.flag:
+            {
                 onToggleFlag(holder);
-
                 break;
-
+            }
             case R.id.archive:
+            {
                 onArchive(holder);
-
                 break;
-
+            }
             case R.id.spam:
+            {
                 onSpam(holder);
-
                 break;
-
+            }
             case R.id.move:
+            {
                 onMove(holder);
-
                 break;
-
+            }
             case R.id.copy:
+            {
                 onCopy(holder);
-
                 break;
-
+            }
             case R.id.send_alternate:
+            {
                 onSendAlternate(mAccount, holder);
-
                 break;
-
+            }
             case R.id.same_sender:
+            {
                 MessageList.actionHandle(MessageList.this,
                                          "From "+holder.sender, holder.sender, true,
                                          null, null);
-
                 break;
-
+            }
         }
-
         return super.onContextItemSelected(item);
     }
 
@@ -1618,18 +1603,14 @@ public class MessageList
         else
         {
             bar.setVisibility(ProgressBar.INVISIBLE);
-
         }
     }
 
     class MyGestureDetector extends SimpleOnGestureListener
     {
-
-
         @Override
         public boolean onFling(MotionEvent e1, MotionEvent e2, float velocityX, float velocityY)
         {
-
             if (e2 == null || e1 == null)
                 return true;
 
@@ -1662,13 +1643,16 @@ public class MessageList
         }
     }
 
-    @Override public void onCreateContextMenu(ContextMenu menu, View v, ContextMenuInfo menuInfo)
+    @Override
+    public void onCreateContextMenu(ContextMenu menu, View v, ContextMenuInfo menuInfo)
     {
         super.onCreateContextMenu(menu, v, menuInfo);
 
-
         AdapterContextMenuInfo info = (AdapterContextMenuInfo) menuInfo;
         MessageInfoHolder message = (MessageInfoHolder) mAdapter.getItem(info.position);
+        // remember which message was originally selected, in case the list changes while the
+        // dialog is up
+        mSelectedMessage = message;
 
         if (message == null)
         {
@@ -1721,16 +1705,14 @@ public class MessageList
             menu.findItem(R.id.select).setVisible(true);
             menu.findItem(R.id.deselect).setVisible(false);
         }
-
     }
 
     class MessageListAdapter extends BaseAdapter
     {
-        private List<MessageInfoHolder> messages = java.util.Collections.synchronizedList(new ArrayList<MessageInfoHolder>());
+        private final List<MessageInfoHolder> messages = java.util.Collections.synchronizedList(new ArrayList<MessageInfoHolder>());
 
-        private ActivityListener mListener = new ActivityListener()
+        private final ActivityListener mListener = new ActivityListener()
         {
-
             @Override
             public void synchronizeMailboxStarted(Account account, String folder)
             {
@@ -1743,6 +1725,21 @@ public class MessageList
                 }
                 mHandler.refreshTitle();
             }
+            @Override
+            public void synchronizeMailboxHeadersProgress(Account account, String folder, int completed, int total)
+            {
+                super.synchronizeMailboxHeadersProgress(account,folder,completed, total);
+                mHandler.refreshTitle();
+            }
+
+            @Override
+            public void synchronizeMailboxHeadersFinished(Account account, String folder,
+                    int total, int completed)
+            {
+                super.synchronizeMailboxHeadersFinished(account,folder, total, completed);
+                mHandler.refreshTitle();
+            }
+
 
 
 
@@ -1803,13 +1800,11 @@ public class MessageList
                 mHandler.refreshTitle();
             }
 
-
             @Override
             public void synchronizeMailboxAddOrUpdateMessage(Account account, String folder, Message message)
             {
                 addOrUpdateMessage(account, folder, message, true);
             }
-
 
             @Override
             public void synchronizeMailboxRemovedMessage(Account account, String folder,Message message)
@@ -1853,7 +1848,6 @@ public class MessageList
                         mHandler.folderLoading(folder, false);
                     }
                 }
-
             }
 
             @Override
@@ -1869,7 +1863,6 @@ public class MessageList
                         mHandler.folderLoading(folder, false);
                     }
                 }
-
             }
 
             @Override
@@ -1881,7 +1874,6 @@ public class MessageList
                     removeMessage(holder);
                 }
             }
-
 
             @Override
             public void listLocalMessagesAddMessages(Account account, String folder, List<Message> messages)
@@ -1969,6 +1961,7 @@ public class MessageList
                 return false;
             }
         }
+
         private Drawable mAttachmentIcon;
         private Drawable mAnsweredIcon;
         private View footerView = null;
@@ -1985,8 +1978,6 @@ public class MessageList
             {
                 mHandler.removeMessage(holders);
             }
-
-
         }
 
         public void removeMessage(MessageInfoHolder holder)
@@ -2001,7 +1992,6 @@ public class MessageList
             List<Message> messages = new ArrayList<Message>();
             messages.add(message);
             addOrUpdateMessages(account, folder, messages, verifyAgainstSearch);
-
         }
 
         private void addOrUpdateMessages(Account account, String folder, List<Message> messages, boolean verifyAgainstSearch)
@@ -2049,8 +2039,8 @@ public class MessageList
                     m.populate(message, new FolderInfoHolder(message.getFolder(), account), account);
                     needsSort = true;
                 }
-
             }
+
             if (messagesToSearch.size() > 0)
             {
                 mController.searchLocalMessages(mAccountUuids, mFolderNames, messagesToSearch.toArray(new Message[0]), mQueryString, mIntegrate, mQueryFlags, mForbiddenFlags,
@@ -2061,17 +2051,19 @@ public class MessageList
                     {
                         addOrUpdateMessages(account, folder, messages, false);
                     }
-
                 });
             }
+
             if (messagesToRemove.size() > 0)
             {
                 removeMessages(messagesToRemove);
             }
+
             if (messagesToAdd.size() > 0)
             {
                 mHandler.addMessages(messagesToAdd);
             }
+
             if (needsSort)
             {
                 mHandler.sortMessages();
@@ -2087,20 +2079,22 @@ public class MessageList
         // XXX TODO - make this not use a for loop
         public MessageInfoHolder getMessage(MessageReference messageReference)
         {
-            for (MessageInfoHolder holder : mAdapter.messages)
+            synchronized (mAdapter.messages)
             {
-                /*
-                 * 2010-06-21 - cketti
-                 * Added null pointer check. Not sure what's causing 'holder'
-                 * to be null. See log provided in issue 1749, comment #15.
-                 *
-                 * Please remove this comment once the cause was found and the
-                 * bug(?) fixed.
-                 */
-                if ((holder != null) &&
-                        holder.message.equalsReference(messageReference))
+                for (MessageInfoHolder holder : mAdapter.messages)
                 {
-                    return holder;
+                    /*
+                     * 2010-06-21 - cketti
+                     * Added null pointer check. Not sure what's causing 'holder'
+                     * to be null. See log provided in issue 1749, comment #15.
+                     *
+                     * Please remove this comment once the cause was found and the
+                     * bug(?) fixed.
+                     */
+                    if ((holder != null) && holder.message.equalsReference(messageReference))
+                    {
+                        return holder;
+                    }
                 }
             }
             return null;
@@ -2132,12 +2126,12 @@ public class MessageList
         private static final int NON_MESSAGE_ITEMS = 1;
         public int getCount()
         {
-            if (mAdapter.messages == null || mAdapter.messages.size() == 0)
+            if (mAdapter.messages.size() == 0)
             {
                 return NON_MESSAGE_ITEMS ;
             }
 
-            return mAdapter.messages.size() +NON_MESSAGE_ITEMS  ;
+            return mAdapter.messages.size() + NON_MESSAGE_ITEMS  ;
         }
 
         public long getItemId(int position)
@@ -2166,9 +2160,12 @@ public class MessageList
         {
             try
             {
-                if (position < mAdapter.messages.size())
+                synchronized (mAdapter.messages)
                 {
-                    return mAdapter.messages.get(position);
+                    if (position < mAdapter.messages.size())
+                    {
+                        return mAdapter.messages.get(position);
+                    }
                 }
             }
             catch (Exception e)
@@ -2191,7 +2188,6 @@ public class MessageList
             }
         }
 
-
         public View getItemView(int position, View convertView, ViewGroup parent)
         {
             MessageInfoHolder message = (MessageInfoHolder) getItem(position);
@@ -2208,14 +2204,12 @@ public class MessageList
                     view = mInflater.inflate(R.layout.message_list_item_touchable, parent, false);
                     view.setId(R.layout.message_list_item);
                 }
-
                 else
                 {
                     view = mInflater.inflate(R.layout.message_list_item, parent, false);
                     view.setId(R.layout.message_list_item);
                 }
             }
-
 
             MessageViewHolder holder = (MessageViewHolder) view.getTag();
 
@@ -2229,6 +2223,8 @@ public class MessageList
                 holder.preview = (TextView) view.findViewById(R.id.preview);
                 holder.selected = (CheckBox) view.findViewById(R.id.selected_checkbox);
                 holder.flagged = (CheckBox) view.findViewById(R.id.flagged);
+
+                // TODO: Don't create an instance of OnClickListener for every message
                 holder.flagged.setOnClickListener(new OnClickListener()
                 {
                     public void onClick(View v)
@@ -2240,60 +2236,46 @@ public class MessageList
                 });
 
                 if (mStars == false)
+                {
                     holder.flagged.setVisibility(View.GONE);
+                }
 
                 if (mCheckboxes == true)
+                {
                     holder.selected.setVisibility(View.VISIBLE);
+                }
 
-
-
-                if (holder.selected!=null)
+                if (holder.selected != null)
                 {
                     holder.selected.setOnCheckedChangeListener(holder);
                 }
+
                 view.setTag(holder);
             }
 
-
             if (message != null)
             {
-
-                holder.subject.setTypeface(null, message.read ? Typeface.NORMAL  : Typeface.BOLD);
+                holder.subject.setTypeface(null, message.read ? Typeface.NORMAL : Typeface.BOLD);
 
                 // XXX TODO there has to be some way to walk our view hierarchy and get this
                 holder.flagged.setTag((Integer)position);
-
-
                 holder.flagged.setChecked(message.flagged);
-                //So that the mSelectedCount is only incremented/decremented
-                //when a user checks the checkbox (vs code)
+
+                // So that the mSelectedCount is only incremented/decremented
+                // when a user checks the checkbox (vs code)
                 holder.position = -1;
                 holder.selected.setChecked(message.selected);
 
                 if (!mCheckboxes)
                 {
-                    if (message.selected == true)
-                    {
-                        holder.selected.setVisibility(View.VISIBLE);
-                    }
-                    else
-                    {
-                        holder.selected.setVisibility(View.GONE);
-                    }
+                    holder.selected.setVisibility(message.selected ? View.VISIBLE : View.GONE);
                 }
+
                 holder.chip.setBackgroundColor(message.message.getFolder().getAccount().getChipColor());
                 holder.chip.getBackground().setAlpha(message.read ? 127 : 255);
+                view.getBackground().setAlpha(message.downloaded ? 0 : 127);
 
-                if (message.downloaded)
-                {
-                    view.getBackground().setAlpha(0);
-                }
-                else
-                {
-                    view.getBackground().setAlpha(127);
-                }
-
-                if (message.subject == null || message.subject.equals(""))
+                if ((message.subject == null) || message.subject.equals(""))
                 {
                     holder.subject.setText(getText(R.string.general_no_subject));
                 }
@@ -2304,26 +2286,34 @@ public class MessageList
 
                 if (holder.preview != null)
                 {
-                    // in the touchable UI, we have previews
-                    // otherwise, we have just a "from" line
-                    // because text views can't wrap around each other(?)
-                    // we compose a custom view containing the preview and the
-                    // from
-
-
-                    holder.preview.setText(message.sender+  " " + message.preview, TextView.BufferType.SPANNABLE);
+                    /*
+                     * In the touchable UI, we have previews. Otherwise, we
+                     * have just a "from" line.
+                     * Because text views can't wrap around each other(?) we
+                     * compose a custom view containing the preview and the
+                     * from.
+                     */
+                    holder.preview.setText(message.sender + " " + message.preview,
+                                           TextView.BufferType.SPANNABLE);
                     Spannable str = (Spannable)holder.preview.getText();
 
-// Create our span sections, and assign a format to each.
-                    str.setSpan(new TextAppearanceSpan(null ,Typeface.BOLD ,-1, holder.subject.getTextColors(), holder.subject.getLinkTextColors()), 0, message.sender.length(), Spannable.SPAN_EXCLUSIVE_EXCLUSIVE);
-
-
+                    // Create our span sections, and assign a format to each.
+                    str.setSpan(
+                        new TextAppearanceSpan(
+                            null,
+                            Typeface.BOLD,
+                            -1,
+                            holder.subject.getTextColors(),
+                            holder.subject.getLinkTextColors()),
+                        0,
+                        message.sender.length(),
+                        Spannable.SPAN_EXCLUSIVE_EXCLUSIVE
+                    );
                 }
                 else
                 {
                     holder.from.setText(message.sender);
                     holder.from.setTypeface(null, message.read ? Typeface.NORMAL : Typeface.BOLD);
-
                 }
 
                 holder.date.setText(message.date);
@@ -2336,6 +2326,8 @@ public class MessageList
             }
             else
             {
+                // TODO is this branch ever reached/executed?
+
                 holder.chip.getBackground().setAlpha(0);
                 holder.subject.setText("No subject");
                 holder.subject.setTypeface(null, Typeface.NORMAL);
@@ -2350,21 +2342,24 @@ public class MessageList
                     holder.from.setText("No sender");
                     holder.from.setTypeface(null, Typeface.NORMAL);
                     holder.from.setCompoundDrawablesWithIntrinsicBounds(null, null, null, null);
-
                 }
 
-
                 holder.date.setText("No date");
+
                 //WARNING: Order of the next 2 lines matter
                 holder.position = -1;
                 holder.selected.setChecked(false);
+
                 if (!mCheckboxes)
+                {
                     holder.selected.setVisibility(View.GONE);
+                }
                 holder.flagged.setChecked(false);
             }
 
             holder.subject.setTextSize(TypedValue.COMPLEX_UNIT_DIP, mFontSizes.getMessageListSubject());
             holder.date.setTextSize(TypedValue.COMPLEX_UNIT_DIP, mFontSizes.getMessageListDate());
+
             if (mTouchView)
             {
                 holder.preview.setTextSize(TypedValue.COMPLEX_UNIT_DIP, mFontSizes.getMessageListSender());
@@ -2441,45 +2436,27 @@ public class MessageList
                 return false;
             }
         }
-
     }
 
     public class MessageInfoHolder implements Comparable<MessageInfoHolder>
     {
         public String subject;
-
         public String date;
-
         public Date compareDate;
-
         public String compareSubject;
-
         public String sender;
-
         public String compareCounterparty;
-
         public String preview;
-
         public String[] recipients;
-
         public boolean hasAttachments;
-
         public String uid;
-
         public boolean read;
-
         public boolean answered;
-
         public boolean flagged;
-
         public boolean downloaded;
-
         public boolean partially_downloaded;
-
         public Message message;
-
         public FolderInfoHolder folder;
-
         public boolean selected;
 
         // Empty constructor for comparison
@@ -2503,15 +2480,14 @@ public class MessageList
 
         public void populate(Message m, FolderInfoHolder folder, Account account)
         {
-
             try
             {
                 LocalMessage message = (LocalMessage) m;
                 Date date = message.getSentDate();
-                this.compareDate = message.getInternalDate();
+                this.compareDate = message.getSentDate();
                 if (this.compareDate == null)
                 {
-                    this.compareDate = message.getSentDate();
+                    this.compareDate = message.getInternalDate();
                 }
 
                 this.folder = folder;
@@ -2524,7 +2500,6 @@ public class MessageList
                 {
                     this.date = getDateFormat().format(date);
                 }
-
 
                 this.hasAttachments = message.getAttachmentCount() > 0;
 
@@ -2552,7 +2527,6 @@ public class MessageList
                 this.uid = message.getUid();
                 this.message = m;
                 this.preview = message.getPreview();
-
             }
             catch (MessagingException me)
             {
@@ -2566,7 +2540,6 @@ public class MessageList
         @Override
         public boolean equals(Object o)
         {
-
             if (o instanceof MessageInfoHolder == false)
             {
                 return false;
@@ -2580,7 +2553,6 @@ public class MessageList
         {
             return uid.hashCode();
         }
-
 
         public int compareTo(MessageInfoHolder o)
         {
@@ -2608,7 +2580,6 @@ public class MessageList
             else if (sortType == SORT_TYPE.SORT_FLAGGED)
             {
                 comparison = (this.flagged ? 0 : 1) - (o.flagged ? 0 : 1);
-
             }
             else if (sortType == SORT_TYPE.SORT_UNREAD)
             {
@@ -2617,7 +2588,6 @@ public class MessageList
             else if (sortType == SORT_TYPE.SORT_ATTACHMENT)
             {
                 comparison = (this.hasAttachments ? 0 : 1) - (o.hasAttachments ? 0 : 1);
-
             }
 
             if (comparison != 0)
@@ -2626,7 +2596,6 @@ public class MessageList
             }
 
             int dateAscender = (sortDateAscending ? 1 : -1);
-
 
             return this.compareDate.compareTo(o.compareDate) * dateAscender;
         }
@@ -2661,7 +2630,6 @@ public class MessageList
                 return in;
             }
         }
-
     }
 
     class MessageViewHolder
@@ -2692,8 +2660,9 @@ public class MessageList
                     {
                         mSelectedCount--;
                     }
-                    //We must set the flag before showing the buttons
-                    //as the buttons text depends on what is selected
+
+                    // We must set the flag before showing the buttons as the
+                    // buttons text depends on what is selected.
                     message.selected = isChecked;
                     if (!mCheckboxes)
                     {
@@ -2717,6 +2686,7 @@ public class MessageList
         //TODO: Fade out animation
         mBatchButtonArea.setVisibility(View.GONE);
     }
+
     private void showBatchButtons()
     {
         //TODO: Fade in animation
@@ -2775,13 +2745,9 @@ public class MessageList
     public class FolderInfoHolder
     {
         public String name;
-
         public String displayName;
-
         public boolean loading;
-
         public boolean lastCheckFailed;
-
         public Folder folder;
 
         /**
@@ -2793,6 +2759,7 @@ public class MessageList
         {
             populate(folder, account);
         }
+
         public void populate(Folder folder, Account account)
         {
             this.folder = folder;
@@ -2844,22 +2811,27 @@ public class MessageList
     {
         boolean newState = false;
 
-        for (MessageInfoHolder holder : mAdapter.messages)
+        synchronized (mAdapter.messages)
         {
-            if (holder.selected)
+            for (MessageInfoHolder holder : mAdapter.messages)
             {
-                if (flagged)
+                if (holder.selected)
                 {
-                    if (!holder.flagged)
+                    if (flagged)
                     {
-                        newState = true;
+                        if (!holder.flagged)
+                        {
+                            newState = true;
+                            break;
+                        }
                     }
-                }
-                else
-                {
-                    if (!holder.read)
+                    else
                     {
-                        newState = true;
+                        if (!holder.read)
+                        {
+                            newState = true;
+                            break;
+                        }
                     }
                 }
             }
@@ -2869,11 +2841,14 @@ public class MessageList
 
     private boolean anySelected()
     {
-        for (MessageInfoHolder holder : mAdapter.messages)
+        synchronized (mAdapter.messages)
         {
-            if (holder.selected)
+            for (MessageInfoHolder holder : mAdapter.messages)
             {
-                return true;
+                if (holder.selected)
+                {
+                    return true;
+                }
             }
         }
         return false;
@@ -2899,24 +2874,27 @@ public class MessageList
         {
             newState = computeBatchDirection(false);
         }
-        for (MessageInfoHolder holder : mAdapter.messages)
-        {
 
-            if (holder.selected)
+        synchronized (mAdapter.messages)
+        {
+            for (MessageInfoHolder holder : mAdapter.messages)
             {
-                if (v == mBatchDeleteButton)
+                if (holder.selected)
                 {
-                    removeHolderList.add(holder);
+                    if (v == mBatchDeleteButton)
+                    {
+                        removeHolderList.add(holder);
+                    }
+                    else if (v == mBatchFlagButton)
+                    {
+                        holder.flagged = newState;
+                    }
+                    else if (v == mBatchReadButton)
+                    {
+                        holder.read = newState;
+                    }
+                    messageList.add(holder.message);
                 }
-                else if (v == mBatchFlagButton)
-                {
-                    holder.flagged = newState;
-                }
-                else if (v == mBatchReadButton)
-                {
-                    holder.read = newState;
-                }
-                messageList.add(holder.message);
             }
         }
         mAdapter.removeMessages(removeHolderList);
@@ -2936,7 +2914,7 @@ public class MessageList
         }
         else
         {
-            //Should not happen
+            // Should not happen
             Toast.makeText(this, R.string.no_message_seletected_toast, Toast.LENGTH_SHORT).show();
         }
         mHandler.sortMessages();
@@ -2945,10 +2923,13 @@ public class MessageList
     private void setAllSelected(boolean isSelected)
     {
         mSelectedCount = 0;
-        for (MessageInfoHolder holder : mAdapter.messages)
+        synchronized (mAdapter.messages)
         {
-            holder.selected = isSelected;
-            mSelectedCount += (isSelected ? 1 : 0);
+            for (MessageInfoHolder holder : mAdapter.messages)
+            {
+                holder.selected = isSelected;
+                mSelectedCount += (isSelected ? 1 : 0);
+            }
         }
         mAdapter.notifyDataSetChanged();
         toggleBatchButtons();
@@ -2956,7 +2937,6 @@ public class MessageList
 
     private void setSelected(MessageInfoHolder holder, boolean newState)
     {
-
         if (holder.selected != newState)
         {
             holder.selected = newState;
@@ -2964,25 +2944,26 @@ public class MessageList
         }
         mAdapter.notifyDataSetChanged();
         toggleBatchButtons();
-
     }
-
 
     private void flagSelected(Flag flag, boolean newState)
     {
         List<Message> messageList = new ArrayList<Message>();
-        for (MessageInfoHolder holder : mAdapter.messages)
+        synchronized (mAdapter.messages)
         {
-            if (holder.selected)
+            for (MessageInfoHolder holder : mAdapter.messages)
             {
-                messageList.add(holder.message);
-                if (flag == Flag.SEEN)
+                if (holder.selected)
                 {
-                    holder.read = newState;
-                }
-                else if (flag == Flag.FLAGGED)
-                {
-                    holder.flagged = newState;
+                    messageList.add(holder.message);
+                    if (flag == Flag.SEEN)
+                    {
+                        holder.read = newState;
+                    }
+                    else if (flag == Flag.FLAGGED)
+                    {
+                        holder.flagged = newState;
+                    }
                 }
             }
         }
@@ -2994,12 +2975,15 @@ public class MessageList
     {
         List<Message> messageList = new ArrayList<Message>();
         List<MessageInfoHolder> removeHolderList = new ArrayList<MessageInfoHolder>();
-        for (MessageInfoHolder holder : mAdapter.messages)
+        synchronized (mAdapter.messages)
         {
-            if (holder.selected)
+            for (MessageInfoHolder holder : mAdapter.messages)
             {
-                removeHolderList.add(holder);
-                messageList.add(holder.message);
+                if (holder.selected)
+                {
+                    removeHolderList.add(holder);
+                    messageList.add(holder.message);
+                }
             }
         }
         mAdapter.removeMessages(removeHolderList);
@@ -3015,16 +2999,21 @@ public class MessageList
         {
             return;
         }
-        for (MessageInfoHolder holder : mAdapter.messages)
+
+        synchronized (mAdapter.messages)
         {
-            if (holder.selected)
+            for (MessageInfoHolder holder : mAdapter.messages)
             {
-                Message message = holder.message;
-                if (mController.isMoveCapable(message) == false)
+                if (holder.selected)
                 {
-                    Toast toast = Toast.makeText(this, R.string.move_copy_cannot_copy_unsynced_message, Toast.LENGTH_LONG);
-                    toast.show();
-                    return;
+                    Message message = holder.message;
+                    if (mController.isMoveCapable(message) == false)
+                    {
+                        Toast toast = Toast.makeText(this,
+                                                     R.string.move_copy_cannot_copy_unsynced_message, Toast.LENGTH_LONG);
+                        toast.show();
+                        return;
+                    }
                 }
             }
         }
@@ -3046,19 +3035,23 @@ public class MessageList
         List<Message> messageList = new ArrayList<Message>();
 
         List<MessageInfoHolder> removeHolderList = new ArrayList<MessageInfoHolder>();
-        for (MessageInfoHolder holder : mAdapter.messages)
+        synchronized (mAdapter.messages)
         {
-            if (holder.selected)
+            for (MessageInfoHolder holder : mAdapter.messages)
             {
-                Message message = holder.message;
-                if (mController.isMoveCapable(message) == false)
+                if (holder.selected)
                 {
-                    Toast toast = Toast.makeText(this, R.string.move_copy_cannot_copy_unsynced_message, Toast.LENGTH_LONG);
-                    toast.show();
-                    return;
+                    Message message = holder.message;
+                    if (mController.isMoveCapable(message) == false)
+                    {
+                        Toast toast = Toast.makeText(this,
+                                                     R.string.move_copy_cannot_copy_unsynced_message, Toast.LENGTH_LONG);
+                        toast.show();
+                        return;
+                    }
+                    messageList.add(holder.message);
+                    removeHolderList.add(holder);
                 }
-                messageList.add(holder.message);
-                removeHolderList.add(holder);
             }
         }
         mAdapter.removeMessages(removeHolderList);
@@ -3074,17 +3067,20 @@ public class MessageList
         {
             return;
         }
-        Account account = null;
-        for (MessageInfoHolder holder : mAdapter.messages)
+
+        synchronized (mAdapter.messages)
         {
-            if (holder.selected)
+            for (MessageInfoHolder holder : mAdapter.messages)
             {
-                Message message = holder.message;
-                if (mController.isMoveCapable(message) == false)
+                if (holder.selected)
                 {
-                    Toast toast = Toast.makeText(this, R.string.move_copy_cannot_copy_unsynced_message, Toast.LENGTH_LONG);
-                    toast.show();
-                    return;
+                    Message message = holder.message;
+                    if (mController.isMoveCapable(message) == false)
+                    {
+                        Toast toast = Toast.makeText(this, R.string.move_copy_cannot_copy_unsynced_message, Toast.LENGTH_LONG);
+                        toast.show();
+                        return;
+                    }
                 }
             }
         }
@@ -3103,17 +3099,20 @@ public class MessageList
         {
             return;
         }
-        Account account = null;
-        for (MessageInfoHolder holder : mAdapter.messages)
+
+        synchronized (mAdapter.messages)
         {
-            if (holder.selected)
+            for (MessageInfoHolder holder : mAdapter.messages)
             {
-                Message message = holder.message;
-                if (mController.isMoveCapable(message) == false)
+                if (holder.selected)
                 {
-                    Toast toast = Toast.makeText(this, R.string.move_copy_cannot_copy_unsynced_message, Toast.LENGTH_LONG);
-                    toast.show();
-                    return;
+                    Message message = holder.message;
+                    if (mController.isMoveCapable(message) == false)
+                    {
+                        Toast toast = Toast.makeText(this, R.string.move_copy_cannot_copy_unsynced_message, Toast.LENGTH_LONG);
+                        toast.show();
+                        return;
+                    }
                 }
             }
         }
@@ -3132,16 +3131,21 @@ public class MessageList
         {
             return;
         }
-        for (MessageInfoHolder holder : mAdapter.messages)
+
+        synchronized (mAdapter.messages)
         {
-            if (holder.selected)
+            for (MessageInfoHolder holder : mAdapter.messages)
             {
-                Message message = holder.message;
-                if (mController.isCopyCapable(message) == false)
+                if (holder.selected)
                 {
-                    Toast toast = Toast.makeText(this, R.string.move_copy_cannot_copy_unsynced_message, Toast.LENGTH_LONG);
-                    toast.show();
-                    return;
+                    Message message = holder.message;
+                    if (mController.isCopyCapable(message) == false)
+                    {
+                        Toast toast = Toast.makeText(this,
+                                                     R.string.move_copy_cannot_copy_unsynced_message, Toast.LENGTH_LONG);
+                        toast.show();
+                        return;
+                    }
                 }
             }
         }
@@ -3160,23 +3164,26 @@ public class MessageList
         {
             return;
         }
-        List<Message> messageList = new ArrayList<Message>();
 
-        for (MessageInfoHolder holder : mAdapter.messages)
+        List<Message> messageList = new ArrayList<Message>();
+        synchronized (mAdapter.messages)
         {
-            if (holder.selected)
+            for (MessageInfoHolder holder : mAdapter.messages)
             {
-                Message message = holder.message;
-                if (mController.isCopyCapable(message) == false)
+                if (holder.selected)
                 {
-                    Toast toast = Toast.makeText(this, R.string.move_copy_cannot_copy_unsynced_message, Toast.LENGTH_LONG);
-                    toast.show();
-                    return;
+                    Message message = holder.message;
+                    if (mController.isCopyCapable(message) == false)
+                    {
+                        Toast toast = Toast.makeText(this,
+                                                     R.string.move_copy_cannot_copy_unsynced_message, Toast.LENGTH_LONG);
+                        toast.show();
+                        return;
+                    }
+                    messageList.add(holder.message);
                 }
-                messageList.add(holder.message);
             }
         }
-
         mController.copyMessages(mAccount, mCurrentFolder.name, messageList.toArray(new Message[0]), folderName, null);
     }
 }

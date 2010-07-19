@@ -59,6 +59,37 @@ public class K9 extends Application
     public static boolean DEBUG = false;
 
     /**
+     * Should K-9 log the conversation it has over the wire with
+     * SMTP servers?
+     */
+
+    public static boolean DEBUG_PROTOCOL_SMTP = true;
+
+    /**
+     * Should K-9 log the conversation it has over the wire with
+     * IMAP servers?
+     */
+
+    public static boolean DEBUG_PROTOCOL_IMAP = true;
+
+
+    /**
+     * Should K-9 log the conversation it has over the wire with
+     * POP3 servers?
+     */
+
+    public static boolean DEBUG_PROTOCOL_POP3 = true;
+
+    /**
+     * Should K-9 log the conversation it has over the wire with
+     * WebDAV servers?
+     */
+
+    public static boolean DEBUG_PROTOCOL_WEBDAV = true;
+
+
+
+    /**
      * If this is enabled than logging that normally hides sensitive information
      * like passwords will show that information.
      */
@@ -178,7 +209,7 @@ public class K9 extends Application
      * so we should probably factor that in. A 5MB attachment will generally be around
      * 6.8MB downloaded but only 5MB saved.
      */
-    public static final int MAX_ATTACHMENT_DOWNLOAD_SIZE = (5 * 1024 * 1024);
+    public static final int MAX_ATTACHMENT_DOWNLOAD_SIZE = (128 * 1024 * 1024);
 
     /**
      * Max time (in millis) the wake lock will be held for when background sync is happening
@@ -502,7 +533,7 @@ public class K9 extends Application
         mStartIntegratedInbox = startIntegratedInbox;
     }
 
-    public static boolean isAnimations()
+    public static boolean showAnimations()
     {
         return mAnimations;
     }

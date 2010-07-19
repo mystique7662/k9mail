@@ -20,6 +20,7 @@ import android.widget.AdapterView.AdapterContextMenuInfo;
 import android.widget.AdapterView.OnItemClickListener;
 import com.fsck.k9.*;
 import com.fsck.k9.Account.FolderMode;
+import com.fsck.k9.activity.setup.Prefs;
 import com.fsck.k9.activity.setup.AccountSettings;
 import com.fsck.k9.activity.setup.FolderSettings;
 import com.fsck.k9.controller.MessagingController;
@@ -486,6 +487,10 @@ public class FolderList extends K9ListActivity
 
     }
 
+    private void onEditPrefs()
+    {
+        Prefs.actionPrefs(this);
+    }
     private void onEditAccount()
     {
         AccountSettings.actionSettings(this, mAccount);
@@ -553,6 +558,11 @@ public class FolderList extends K9ListActivity
 
             case R.id.account_settings:
                 onEditAccount();
+
+                return true;
+
+            case R.id.app_settings:
+                onEditPrefs();
 
                 return true;
 
@@ -960,6 +970,34 @@ public class FolderList extends K9ListActivity
                 mHandler.dataChanged();
 
             }
+
+            @Override
+            public void synchronizeMailboxHeadersStarted(Account account, String folder)
+            {
+
+                super.synchronizeMailboxHeadersStarted(account, folder);
+                mHandler.refreshTitle();
+            }
+
+
+            @Override
+            public void synchronizeMailboxHeadersProgress(Account account, String folder, int completed, int total)
+            {
+                super.synchronizeMailboxHeadersProgress(account,folder,completed, total);
+                mHandler.refreshTitle();
+            }
+
+            @Override
+            public void synchronizeMailboxHeadersFinished(Account account, String folder,
+                    int total, int completed)
+            {
+                super.synchronizeMailboxHeadersFinished(account,folder, total, completed);
+                mHandler.refreshTitle();
+            }
+
+
+
+
 
             @Override
             public void synchronizeMailboxProgress(Account account, String folder, int completed, int total)

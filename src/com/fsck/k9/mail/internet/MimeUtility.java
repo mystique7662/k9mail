@@ -15,7 +15,6 @@ import java.io.ByteArrayOutputStream;
 import java.io.IOException;
 import java.io.InputStream;
 import java.io.OutputStream;
-import java.nio.charset.Charset;
 import java.util.ArrayList;
 import java.util.regex.Pattern;
 
@@ -368,13 +367,13 @@ public class MimeUtility
                      */
                     final String originalCharset = getHeaderParameter(part.getContentType(), "charset");
                     String charset = "ASCII";   // No encoding, so use us-ascii, which is the standard.
-                    if (originalCharset != null)
+                    if ((originalCharset != null) && ("0".equals(originalCharset) == false))
                     {
                         /*
                          * See if there is conversion from the MIME charset to the Java one.
                          */
                         charset = CharsetUtil.toJavaCharset(originalCharset);
-                        
+
                         if (charset == null)
                         {
                             return String.format(K9.app.getString(R.string.charset_not_found), originalCharset);
