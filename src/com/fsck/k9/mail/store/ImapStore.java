@@ -63,7 +63,7 @@ public class ImapStore extends Store
     public static final int CONNECTION_SECURITY_SSL_REQUIRED = 3;
     public static final int CONNECTION_SECURITY_SSL_OPTIONAL = 4;
 
-    private enum AuthType { PLAIN, CRAM_MD5 };
+    private enum AuthType { PLAIN, CRAM_MD5, XOAUTH };
 
     private static final int IDLE_READ_TIMEOUT_INCREMENT = 5 * 60 * 1000;
     private static final int IDLE_FAILURE_COUNT_LIMIT = 10;
@@ -87,6 +87,7 @@ public class ImapStore extends Store
     private int mPort;
     private String mUsername;
     private String mPassword;
+
     private int mConnectionSecurity;
     private AuthType mAuthType;
     private volatile String mPathPrefix;
@@ -184,9 +185,19 @@ public class ImapStore extends Store
                 }
                 else
                 {
-                    mAuthType = AuthType.valueOf(userInfoParts[0]);
-                    mUsername = URLDecoder.decode(userInfoParts[1], "UTF-8");
-                    mPassword = URLDecoder.decode(userInfoParts[2], "UTF-8");
+                    try {
+                        mAuthType = AuthType.valueOf(userInfoParts[0].toUpperCase());
+
+                        switch (mAuthType) {
+                            case CRAM_MD5:
+                            case XOAUTH:
+                                mUsername = URLDecoder.decode(userInfoParts[1], "UTF-8");
+                                mPassword = URLDecoder.decode(userInfoParts[2], "UTF-8");
+                                break;
+                        }
+                    } catch (IllegalArgumentException ie) {
+                        throw new MessagingException("Unsupported authtype: " + userInfoParts[0]);
+                    }
                 }
             }
             catch (UnsupportedEncodingException enc)
@@ -2271,6 +2282,17 @@ public class ImapStore extends Store
                     {
                         receiveCapabilities(executeSimpleCommand("LOGIN \"" + escapeString(mUsername) + "\" \"" + escapeString(mPassword) + "\"", true));
                     }
+                    else if (mAuthType == AuthType.XOAUTH) {
+                        if (hasCapability("AUTH=XOAUTH")) {
+                            if (K9.DEBUG)
+                                Log.i(K9.LOG_TAG, "Authenticate using XOAUTH");
+
+                            executeSimpleCommand("AUTHENTICATE XOAUTH " + mPassword);
+                        } else {
+                            throw new AuthenticationFailedException("Server does not support XOAUTH");
+                        }
+                    }
+
                     authSuccess = true;
                 }
                 catch (ImapException ie)
