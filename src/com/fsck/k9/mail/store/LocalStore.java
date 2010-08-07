@@ -1,7 +1,7 @@
 
 package com.fsck.k9.mail.store;
 
-import android.content.Context;
+import android.app.Application;
 import android.content.ContentValues;
 import android.content.SharedPreferences;
 import android.database.Cursor;
@@ -42,7 +42,7 @@ public class LocalStore extends Store implements Serializable
     private String mPath;
     private SQLiteDatabase mDb;
     private File mAttachmentsDir;
-    private Context mApplication;
+    private Application mApplication;
     private String uUid = null;
 
     private static Set<String> HEADERS_TO_SAVE = new HashSet<String>();
@@ -67,7 +67,7 @@ public class LocalStore extends Store implements Serializable
     /**
      * local://localhost/path/to/database/uuid.db
      */
-    public LocalStore(Account account, Context application) throws MessagingException
+    public LocalStore(Account account, Application application) throws MessagingException
     {
         super(account);
         mApplication = application;
@@ -99,7 +99,7 @@ public class LocalStore extends Store implements Serializable
 
     }
 
-    private void openOrCreateDataspace(Context application)
+    private void openOrCreateDataspace(Application application)
     {
         File parentDir = new File(mPath).getParentFile();
         if (!parentDir.exists())
@@ -120,7 +120,7 @@ public class LocalStore extends Store implements Serializable
         }
     }
 
-    private void doDbUpgrade(SQLiteDatabase mDb, Context application)
+    private void doDbUpgrade(SQLiteDatabase mDb, Application application)
     {
         Log.i(K9.LOG_TAG, String.format("Upgrading database from version %d to version %d",
                                         mDb.getVersion(), DB_VERSION));
@@ -2852,10 +2852,10 @@ public class LocalStore extends Store implements Serializable
 
     public static class LocalAttachmentBody implements Body
     {
-        private Context mApplication;
+        private Application mApplication;
         private Uri mUri;
 
-        public LocalAttachmentBody(Uri uri, Context application)
+        public LocalAttachmentBody(Uri uri, Application application)
         {
             mApplication = application;
             mUri = uri;
