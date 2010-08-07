@@ -8,6 +8,8 @@ import com.fsck.k9.activity.MessageReference;
 
 public abstract class Message implements Part, Body
 {
+    private static final Flag[] EMPTY_FLAG_ARRAY = new Flag[0];
+
     private MessageReference mReference = null;
 
     public enum RecipientType
@@ -29,10 +31,10 @@ public abstract class Message implements Part, Body
         {
             return false;
         }
-        Date myDate = getInternalDate();
+        Date myDate = getSentDate();
         if (myDate == null)
         {
-            myDate = getSentDate();
+            myDate = getInternalDate();
         }
         if (myDate != null)
         {
@@ -156,7 +158,7 @@ public abstract class Message implements Part, Body
      */
     public Flag[] getFlags()
     {
-        return mFlags.toArray(new Flag[] {});
+        return mFlags.toArray(EMPTY_FLAG_ARRAY);
     }
 
     public void setFlag(Flag flag, boolean set) throws MessagingException

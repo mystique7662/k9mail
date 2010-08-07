@@ -18,6 +18,12 @@ import java.util.List;
 
 public class Address
 {
+
+    /**
+     * Immutable empty {@link Address} array
+     */
+    private static final Address[] EMPTY_ADDRESS_ARRAY = new Address[0];
+
     String mAddress;
 
     String mPersonal;
@@ -93,7 +99,7 @@ public class Address
                 }
             }
         }
-        return addresses.toArray(new Address[0]);
+        return addresses.toArray(EMPTY_ADDRESS_ARRAY);
     }
 
     /**
@@ -109,7 +115,7 @@ public class Address
         if (addressList == null
                 && !"".equals(addressList))
         {
-            return new Address[] {};
+            return EMPTY_ADDRESS_ARRAY;
         }
         try
         {
@@ -139,7 +145,7 @@ public class Address
         catch (ParseException pe)
         {
         }
-        return addresses.toArray(new Address[] {});
+        return addresses.toArray(EMPTY_ADDRESS_ARRAY);
     }
 
     @Override

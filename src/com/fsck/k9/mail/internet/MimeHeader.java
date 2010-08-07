@@ -13,6 +13,8 @@ import java.util.*;
 
 public class MimeHeader
 {
+    private static final String[] EMPTY_STRING_ARRAY = new String[0];
+
     /**
      * Application specific header that contains Store specific information about an attachment.
      * In IMAP this contains the IMAP BODYSTRUCTURE part id so that the ImapStore can later
@@ -25,6 +27,7 @@ public class MimeHeader
     public static final String HEADER_CONTENT_TYPE = "Content-Type";
     public static final String HEADER_CONTENT_TRANSFER_ENCODING = "Content-Transfer-Encoding";
     public static final String HEADER_CONTENT_DISPOSITION = "Content-Disposition";
+    public static final String HEADER_CONTENT_ID = "Content-ID";
 
     /**
      * Fields that should be omitted when writing the header using writeTo()
@@ -92,7 +95,7 @@ public class MimeHeader
         {
             return null;
         }
-        return values.toArray(new String[] {});
+        return values.toArray(EMPTY_STRING_ARRAY);
     }
 
     public void removeHeader(String name)

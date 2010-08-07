@@ -1,4 +1,3 @@
-
 package com.fsck.k9.mail;
 
 import java.util.ArrayList;
@@ -55,7 +54,6 @@ public class FetchProfile extends ArrayList<FetchProfile.Item>
          * The entire message.
          */
         BODY,
-        
         /**
          * Just the date
          */
