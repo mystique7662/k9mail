@@ -290,7 +290,6 @@ Welcome to K-9 Mail setup.  K-9 is an open source mail client for Android origin
 
     <string name="folder_push_active_symbol">(Push)</string>
 
-    <string name="find_action">Find messages</string>
     <string name="from_same_sender">More from this sender</string>
 
     <string name="message_copied_toast">Message copied</string>
@@ -506,12 +505,23 @@ Welcome to K-9 Mail setup.  K-9 is an open source mail client for Android origin
     <string name="account_settings_enable_move_buttons_summary">Show the Archive, Move, and Spam buttons.</string>
     <string name="account_settings_hide_move_buttons_label">Scroll move buttons</string>
 
+    <string name="account_settings_show_pictures_label">Show pictures automatically</string>
+    <string name="account_settings_show_pictures_never">Never</string>
+    <string name="account_settings_show_pictures_only_from_contacts">Only from contacts</string>
+    <string name="account_settings_show_pictures_always">Always</string>
+
     <string name="account_settings_composition">Writing messages</string>
     <string name="account_settings_sync">Syncing folders</string>
     <string name="account_settings_folders">Folders</string>
     <string name="account_settings_message_lists">Listing messages</string>
     <string name="account_settings_message_view">Viewing messages</string>
     <string name="account_settings_quote_prefix_label">Quote prefix</string>
+    <string name="account_settings_crypto">Cryptography</string>
+    <string name="account_settings_crypto_app">OpenPGP Provider</string>
+    <string name="account_settings_crypto_app_none">None</string>
+    <string name="account_settings_crypto_app_not_available">not available</string>
+    <string name="account_settings_crypto_auto_signature">Auto-sign</string>
+    <string name="account_settings_crypto_auto_signature_summary">Use the account\'s email address to guess the signature key.</string>
 
     <string name="account_settings_mail_check_frequency_label">Folder poll check frequency</string>
     <string name="account_settings_second_class_check_frequency_label">2nd class check frequency</string>
@@ -667,13 +677,14 @@ Welcome to K-9 Mail setup.  K-9 is an open source mail client for Android origin
 
     <string name="default_signature">-- \nSent from my Android phone with K-9 Mail. Please excuse my brevity.</string>
     <string name="default_identity_description">Initial identity</string>
-     <string name="choose_identity">Choose identity</string>
-     <string name="choose_identity_title">Choose identity</string>
+    <string name="choose_identity">Choose identity</string>
+    <string name="choose_identity_title">Choose identity</string>
+    <string name="choose_account_title">Choose account/identity</string>
 
-     <string name="no_identities">Go to Account Settings -&gt; Manage Identities to create identities</string>
-     <string name="no_removable_identity">You can\'t remove your only identity</string>
-     <string name="identity_has_no_email">You can\'t use an identity without an email address</string>
-     <string name="identity_will_not_be_saved">Your identity choice and signature changes will not be saved with a draft</string>
+    <string name="no_identities">Go to Account Settings -&gt; Manage Identities to create identities</string>
+    <string name="no_removable_identity">You can\'t remove your only identity</string>
+    <string name="identity_has_no_email">You can\'t use an identity without an email address</string>
+    <string name="identity_will_not_be_saved">Your identity choice and signature changes will not be saved with a draft</string>
 
     <string name="sort_earliest_first">Earliest messages first</string>
     <string name="sort_latest_first">Latest messages first</string>
@@ -889,6 +900,20 @@ Welcome to K-9 Mail setup.  K-9 is an open source mail client for Android origin
     <string name="miscellaneous_preferences">Miscellaneous</string>
     <string name="misc_preferences_attachment_title">Use Gallery bug work-around</string>
     <string name="misc_preferences_attachment_description">Show buttons to add image/video attachments (to work around a Gallery 3D bug)</string>
+
+    <!-- APG related -->
+    <string name="error_activity_not_found">No suitable application for this action found.</string>
+    <string name="error_apg_version_not_supported">The installed APG version is not supported.</string>
+    <string name="btn_crypto_sign">Sign</string>
+    <string name="btn_encrypt">Encrypt</string>
+    <string name="btn_decrypt">Decrypt</string>
+    <string name="btn_verify">Verify</string>
+    <string name="unknown_crypto_signature_user_id">&lt;unknown&gt;</string>
+    <string name="key_id">id: %s</string>
+    <string name="insufficient_apg_permissions">K-9 doesn\'t have permission to access APG fully, please reinstall K-9 to fix that.</string>
+    <string name="pgp_mime_unsupported">PGP/MIME messages are not supported yet.</string>
+    <string name="attachment_encryption_unsupported">Warning: attachments are NOT signed or encrypted yet.</string>
+    <string name="send_aborted">Send aborted.</string>
 
     <string name="save_or_discard_draft_message_dlg_title">Save draft message?</string>
     <string name="save_or_discard_draft_message_instructions_fmt">Save or Discard this message?</string>

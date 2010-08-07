@@ -36,7 +36,6 @@ import android.util.Config;
 import android.util.Log;
 import android.util.TypedValue;
 import android.view.Gravity;
-import android.view.HapticFeedbackConstants;
 import android.view.KeyEvent;
 import android.view.LayoutInflater;
 import android.view.Menu;
@@ -56,6 +55,9 @@ import android.widget.ImageView;
 import android.widget.LinearLayout;
 import android.widget.TextView;
 import android.widget.Toast;
+import android.provider.ContactsContract.Data;
+import android.provider.ContactsContract.CommonDataKinds.Email;
+import android.database.Cursor;
 
 import com.fsck.k9.Account;
 import com.fsck.k9.FontSizes;
@@ -64,6 +66,7 @@ import com.fsck.k9.Preferences;
 import com.fsck.k9.R;
 import com.fsck.k9.controller.MessagingController;
 import com.fsck.k9.controller.MessagingListener;
+import com.fsck.k9.crypto.CryptoProvider;
 import com.fsck.k9.mail.Address;
 import com.fsck.k9.mail.Flag;
 import com.fsck.k9.mail.Message;
@@ -83,6 +86,9 @@ public class MessageView extends K9Activity implements OnClickListener
     private static final String EXTRA_MESSAGE_REFERENCES = "com.fsck.k9.MessageView_messageReferences";
     private static final String EXTRA_NEXT = "com.fsck.k9.MessageView_next";
 
+    private static final String SHOW_PICTURES = "showPictures";
+    private static final String STATE_CRYPTO = "crypto";
+
     private static final int ACTIVITY_CHOOSE_FOLDER_MOVE = 1;
     private static final int ACTIVITY_CHOOSE_FOLDER_COPY = 2;
 
@@ -95,13 +101,21 @@ public class MessageView extends K9Activity implements OnClickListener
     public View chip;
     private CheckBox mFlagged;
     private int defaultSubjectColor;
+    private View mDecryptLayout;
+    private Button mDecryptButton;
+    private LinearLayout mCryptoSignatureLayout = null;
+    private ImageView mCryptoSignatureStatusImage = null;
+    private TextView mCryptoSignatureUserId = null;
+    private TextView mCryptoSignatureUserIdRest = null;
     private WebView mMessageContentView;
     private LinearLayout mHeaderContainer;
     private LinearLayout mAttachments;
+    private LinearLayout mToContainerView;
     private LinearLayout mCcContainerView;
     private TextView mAdditionalHeadersView;
     private View mAttachmentIcon;
     private View mShowPicturesSection;
+    private boolean mShowPictures;
 
     private Button mDownloadRemainder;
 
@@ -125,16 +139,15 @@ public class MessageView extends K9Activity implements OnClickListener
     private ArrayList<MessageReference> mMessageReferences;
 
     private Message mMessage;
+    private CryptoProvider mCrypto = null;
 
     private static final int PREVIOUS = 1;
     private static final int NEXT = 2;
 
     private int mLastDirection = PREVIOUS;
 
-
     private MessageReference mNextMessage = null;
     private MessageReference mPreviousMessage = null;
-
 
     private Menu optionsMenu = null;
 
@@ -396,6 +409,7 @@ public class MessageView extends K9Activity implements OnClickListener
                         mDateView.setVisibility(View.GONE);
                     }
                     mTimeView.setText(time);
+                    mToContainerView.setVisibility((to != null && to.length() > 0)? View.VISIBLE : View.GONE);
                     mToView.setText(to);
 
                     mCcContainerView.setVisibility((cc != null && cc.length() > 0)? View.VISIBLE : View.GONE);
@@ -721,6 +735,7 @@ public class MessageView extends K9Activity implements OnClickListener
         mFromView = (TextView)findViewById(R.id.from);
         mToView = (TextView)findViewById(R.id.to);
         mCcView = (TextView)findViewById(R.id.cc);
+        mToContainerView = (LinearLayout)findViewById(R.id.to_container);
         mCcContainerView = (LinearLayout)findViewById(R.id.cc_container);
         mSubjectView = (TextView)findViewById(R.id.subject);
         defaultSubjectColor = mSubjectView.getCurrentTextColor();
@@ -734,9 +749,43 @@ public class MessageView extends K9Activity implements OnClickListener
         mTopView = mToggleScrollView = (ToggleScrollView)findViewById(R.id.top_view);
         mMessageContentView = (WebView)findViewById(R.id.message_content);
 
+        mDecryptLayout = (View)findViewById(R.id.layout_decrypt);
+        mDecryptButton = (Button)findViewById(R.id.btn_decrypt);
+        mDecryptButton.setOnClickListener(new OnClickListener()
+        {
+            @Override
+            public void onClick(View v)
+            {
+                try
+                {
+                    String data = null;
+                    Part part = MimeUtility.findFirstPartByMimeType(mMessage, "text/plain");
+                    if (part == null)
+                    {
+                        part = MimeUtility.findFirstPartByMimeType(mMessage, "text/html");
+                    }
+                    if (part != null)
+                    {
+                        data = MimeUtility.getTextFromPart(part);
+                    }
+                    mCrypto.decrypt(MessageView.this, data);
+                }
+                catch (MessagingException me)
+                {
+                    Log.e(K9.LOG_TAG, "Unable to decrypt email.", me);
+                }
+            }
+        });
+        mCryptoSignatureLayout = (LinearLayout) findViewById(R.id.crypto_signature);
+        mCryptoSignatureStatusImage = (ImageView) findViewById(R.id.ic_crypto_signature_status);
+        mCryptoSignatureUserId = (TextView) findViewById(R.id.userId);
+        mCryptoSignatureUserIdRest = (TextView) findViewById(R.id.userIdRest);
+        mCryptoSignatureLayout.setVisibility(View.INVISIBLE);
+
         mAttachments = (LinearLayout)findViewById(R.id.attachments);
         mAttachmentIcon = findViewById(R.id.attachment);
         mShowPicturesSection = findViewById(R.id.show_pictures_section);
+        mShowPictures = false;
 
         mDownloadRemainder = (Button)findViewById(R.id.download_remainder);
 
@@ -808,14 +857,17 @@ public class MessageView extends K9Activity implements OnClickListener
         Intent intent = getIntent();
         Uri uri = intent.getData();
 
-        if (icicle!=null)
+        if (icicle != null)
         {
             mMessageReference = (MessageReference)icicle.getSerializable(EXTRA_MESSAGE_REFERENCE);
             mMessageReferences = (ArrayList<MessageReference>)icicle.getSerializable(EXTRA_MESSAGE_REFERENCES);
+
+            mCrypto = (CryptoProvider) icicle.getSerializable(STATE_CRYPTO);
+            updateDecryptLayout();
         }
         else
         {
-            if (uri==null)
+            if (uri == null)
             {
                 mMessageReference = (MessageReference)intent.getSerializableExtra(EXTRA_MESSAGE_REFERENCE);
                 mMessageReferences = (ArrayList<MessageReference>)intent.getSerializableExtra(EXTRA_MESSAGE_REFERENCES);
@@ -823,7 +875,7 @@ public class MessageView extends K9Activity implements OnClickListener
             else
             {
                 List<String> segmentList = uri.getPathSegments();
-                if (segmentList.size()==3)
+                if (segmentList.size() == 3)
                 {
                     String accountId = segmentList.get(0);
                     Account[] accounts = Preferences.getPreferences(this).getAccounts();
@@ -859,6 +911,7 @@ public class MessageView extends K9Activity implements OnClickListener
                 }
             }
         }
+
         if (K9.DEBUG)
             Log.d(K9.LOG_TAG, "MessageView got message " + mMessageReference);
 
@@ -953,6 +1006,22 @@ public class MessageView extends K9Activity implements OnClickListener
     {
         outState.putSerializable(EXTRA_MESSAGE_REFERENCE, mMessageReference);
         outState.putSerializable(EXTRA_MESSAGE_REFERENCES, mMessageReferences);
+        outState.putSerializable(STATE_CRYPTO, mCrypto);
+        outState.putBoolean(SHOW_PICTURES, mShowPictures);
+    }
+
+    @Override
+    protected void onRestoreInstanceState(Bundle savedInstanceState)
+    {
+        super.onRestoreInstanceState(savedInstanceState);
+
+        mShowPictures = savedInstanceState.getBoolean(SHOW_PICTURES);
+        setLoadPictures(mShowPictures);
+
+        mCrypto = (CryptoProvider) savedInstanceState.getSerializable(STATE_CRYPTO);
+        initializeCrypto();
+
+        updateDecryptLayout();
     }
 
     private void displayMessage(MessageReference ref)
@@ -963,12 +1032,19 @@ public class MessageView extends K9Activity implements OnClickListener
 
         mAccount = Preferences.getPreferences(this).getAccount(ref.accountUuid);
 
-        mMessageContentView.getSettings().setBlockNetworkImage(true);
-        K9.setBlockNetworkLoads(mMessageContentView.getSettings(), true);
+        mMessageContentView.clearView();
+        setLoadPictures(false);
 
         mHandler.hideHeaderContainer();
         mAttachments.removeAllViews();
         findSurroundingMessagesUid();
+
+        // grab a new crypto provider object, as the account may have changed, and currently
+        // the decrypted data and signature are stored in the crypto provider object
+        // TODO: separate that storage from the provider
+        // TODO: then move the provider object directly into the account object
+        mCrypto = null;
+        initializeCrypto();
 
         setupDisplayMessageButtons();
 
@@ -1002,11 +1078,8 @@ public class MessageView extends K9Activity implements OnClickListener
             previous_scrolling.setEnabled(enablePrev);
 
         // If moving isn't support at all, then all of them must be disabled anyway.
-        if (MessagingController.getInstance(getApplication()).isMoveCapable(mAccount) == false)
-        {
-            disableMoveButtons();
-        }
-        else
+        if (MessagingController.getInstance(getApplication()).isMoveCapable(mAccount))
+
         {
             // Only enable the button if the Archive folder is not the current folder and not NONE.
             boolean enableArchive = !mMessageReference.folderName.equals(mAccount.getArchiveFolderName()) &&
@@ -1022,6 +1095,11 @@ public class MessageView extends K9Activity implements OnClickListener
             mMoveScrolling.setEnabled(enableMove);
             mSpamScrolling.setEnabled(enableSpam);
         }
+        else
+        {
+            disableMoveButtons();
+        }
+
 
     }
 
@@ -1063,6 +1141,7 @@ public class MessageView extends K9Activity implements OnClickListener
 
     private void disableButtons()
     {
+        setLoadPictures(false);
         disableMoveButtons();
         next.setEnabled(false);
         next_scrolling.setEnabled(false);
@@ -1135,11 +1214,11 @@ public class MessageView extends K9Activity implements OnClickListener
 
     private void onArchive()
     {
-        if (MessagingController.getInstance(getApplication()).isMoveCapable(mAccount) == false)
+        if (!MessagingController.getInstance(getApplication()).isMoveCapable(mAccount))
         {
             return;
         }
-        if (MessagingController.getInstance(getApplication()).isMoveCapable(mMessage) == false)
+        if (!MessagingController.getInstance(getApplication()).isMoveCapable(mMessage))
         {
             Toast toast = Toast.makeText(this, R.string.move_copy_cannot_copy_unsynced_message, Toast.LENGTH_LONG);
             toast.show();
@@ -1160,11 +1239,11 @@ public class MessageView extends K9Activity implements OnClickListener
 
     private void onSpam()
     {
-        if (MessagingController.getInstance(getApplication()).isMoveCapable(mAccount) == false)
+        if (!MessagingController.getInstance(getApplication()).isMoveCapable(mAccount))
         {
             return;
         }
-        if (MessagingController.getInstance(getApplication()).isMoveCapable(mMessage) == false)
+        if (!MessagingController.getInstance(getApplication()).isMoveCapable(mMessage))
         {
             Toast toast = Toast.makeText(this, R.string.move_copy_cannot_copy_unsynced_message, Toast.LENGTH_LONG);
             toast.show();
@@ -1249,7 +1328,7 @@ public class MessageView extends K9Activity implements OnClickListener
     {
         if (mMessage != null)
         {
-            MessageCompose.actionReply(this, mAccount, mMessage, false);
+            MessageCompose.actionReply(this, mAccount, mMessage, false, mCrypto.getDecryptedData());
             finish();
         }
     }
@@ -1258,7 +1337,7 @@ public class MessageView extends K9Activity implements OnClickListener
     {
         if (mMessage != null)
         {
-            MessageCompose.actionReply(this, mAccount, mMessage, true);
+            MessageCompose.actionReply(this, mAccount, mMessage, true, mCrypto.getDecryptedData());
             finish();
         }
     }
@@ -1267,7 +1346,7 @@ public class MessageView extends K9Activity implements OnClickListener
     {
         if (mMessage != null)
         {
-            MessageCompose.actionForward(this, mAccount, mMessage);
+            MessageCompose.actionForward(this, mAccount, mMessage, mCrypto.getDecryptedData());
             finish();
         }
     }
@@ -1293,12 +1372,12 @@ public class MessageView extends K9Activity implements OnClickListener
 
     private void onMove()
     {
-        if ((MessagingController.getInstance(getApplication()).isMoveCapable(mAccount) == false)
+        if ((!MessagingController.getInstance(getApplication()).isMoveCapable(mAccount))
                 || (mMessage == null))
         {
             return;
         }
-        if (MessagingController.getInstance(getApplication()).isMoveCapable(mMessage) == false)
+        if (!MessagingController.getInstance(getApplication()).isMoveCapable(mMessage))
         {
             Toast toast = Toast.makeText(this, R.string.move_copy_cannot_copy_unsynced_message, Toast.LENGTH_LONG);
             toast.show();
@@ -1314,12 +1393,12 @@ public class MessageView extends K9Activity implements OnClickListener
 
     private void onCopy()
     {
-        if ((MessagingController.getInstance(getApplication()).isCopyCapable(mAccount) == false)
+        if ((!MessagingController.getInstance(getApplication()).isCopyCapable(mAccount))
                 || (mMessage == null))
         {
             return;
         }
-        if (MessagingController.getInstance(getApplication()).isCopyCapable(mMessage) == false)
+        if (!MessagingController.getInstance(getApplication()).isCopyCapable(mMessage))
         {
             Toast toast = Toast.makeText(this, R.string.move_copy_cannot_copy_unsynced_message, Toast.LENGTH_LONG);
             toast.show();
@@ -1374,6 +1453,11 @@ public class MessageView extends K9Activity implements OnClickListener
     @Override
     protected void onActivityResult(int requestCode, int resultCode, Intent data)
     {
+        if (mCrypto.onActivityResult(this, requestCode, resultCode, data))
+        {
+            return;
+        }
+
         if (resultCode != RESULT_OK)
             return;
 
@@ -1407,6 +1491,9 @@ public class MessageView extends K9Activity implements OnClickListener
                             break;
                     }
                 }
+                break;
+
+
         }
     }
 
@@ -1580,11 +1667,25 @@ public class MessageView extends K9Activity implements OnClickListener
 
     private void onShowPictures()
     {
-        K9.setBlockNetworkLoads(mMessageContentView.getSettings(), false);
-        mMessageContentView.getSettings().setBlockNetworkImage(false);
-        mShowPicturesSection.setVisibility(View.GONE);
+        // TODO: Download attachments that are used as inline image
+
+        setLoadPictures(true);
     }
 
+    /**
+     * Enable/disable image loading of the WebView. But always hide the
+     * "Show pictures" button!
+     *
+     * @param enable true, if (network) images should be loaded.
+     *               false, otherwise.
+     */
+    private void setLoadPictures(boolean enable)
+    {
+        K9.setBlockNetworkLoads(mMessageContentView.getSettings(), !enable);
+        mMessageContentView.getSettings().setBlockNetworkImage(!enable);
+        mShowPictures = enable;
+        mHandler.showShowPictures(false);
+    }
 
     public void onClick(View view)
     {
@@ -1964,6 +2065,7 @@ public class MessageView extends K9Activity implements OnClickListener
                     public void run()
                     {
                         mMessageContentView.loadUrl("file:///android_asset/downloading.html");
+                        updateDecryptLayout();
                     }
                 });
             }
@@ -2005,30 +2107,39 @@ public class MessageView extends K9Activity implements OnClickListener
                 mHandler.removeAllAttachments();
 
                 String text;
-                Part part = MimeUtility.findFirstPartByMimeType(mMessage, "text/html");
-                if (part == null)
+                String type = "text/html";
+                if (mCrypto.getDecryptedData() != null)
                 {
-                    part = MimeUtility.findFirstPartByMimeType(mMessage, "text/plain");
+                    text = mCrypto.getDecryptedData();
+                    type = "text/plain";
+                }
+                else
+                {
+                    Part part = MimeUtility.findFirstPartByMimeType(mMessage, "text/html");
                     if (part == null)
                     {
-                        text = null;
-                    }
-                    else
-                    {
-                        LocalTextBody body = (LocalTextBody)part.getBody();
-                        if (body == null)
+                        part = MimeUtility.findFirstPartByMimeType(mMessage, "text/plain");
+                        if (part == null)
                         {
                             text = null;
                         }
                         else
                         {
-                            text = body.getBodyForDisplay();
+                            LocalTextBody body = (LocalTextBody)part.getBody();
+                            if (body == null)
+                            {
+                                text = null;
+                            }
+                            else
+                            {
+                                text = body.getBodyForDisplay();
+                            }
                         }
                     }
-                }
-                else
-                {
-                    text = MimeUtility.getTextFromPart(part);
+                    else
+                    {
+                        text = MimeUtility.getTextFromPart(part);
+                    }
                 }
 
                 if (text != null)
@@ -2038,14 +2149,52 @@ public class MessageView extends K9Activity implements OnClickListener
                      * get background images and a million other things that HTML allows.
                      */
                     final String emailText = text;
+                    final String mimeType = type;
                     mHandler.post(new Runnable()
                     {
                         public void run()
                         {
-                            mMessageContentView.loadDataWithBaseURL("http://", emailText, "text/html", "utf-8", null);
+                            mMessageContentView.loadDataWithBaseURL("http://", emailText, mimeType, "utf-8", null);
+                            updateDecryptLayout();
                         }
                     });
-                    mHandler.showShowPictures(text.contains("<img"));
+
+                    // TODO: Only check for external (non inline) images
+                    final boolean hasPictures = text.contains("<img");
+
+                    // If the message contains pictures and the "Show pictures"
+                    // button wasn't already pressed...
+                    if (hasPictures && (mShowPictures == false))
+                    {
+                        boolean forceShowPictures = false;
+                        if (account.getShowPictures() == Account.ShowPictures.ALWAYS)
+                        {
+                            forceShowPictures = true;
+                        }
+                        else if (account.getShowPictures() == Account.ShowPictures.ONLY_FROM_CONTACTS)
+                        {
+                            // TODO: change to _COUNT for speed
+                            Cursor c = getContentResolver().query(Data.CONTENT_URI, new String[]{Data._ID},
+                                Data.MIMETYPE + "='" + Email.CONTENT_ITEM_TYPE + "' AND "
+                                    + Data.DATA1 + "=? AND "
+                                    + Data.IN_VISIBLE_GROUP + "='1'",
+                                new String[] { message.getFrom()[0].getAddress() }, null);
+
+                            if ((c != null) && (c.getCount() > 0))
+                            {
+                                forceShowPictures = true;
+                            }
+                        }
+
+                        if (forceShowPictures)
+                        {
+                            onShowPictures();
+                        }
+                        else
+                        {
+                            mHandler.showShowPictures(true);
+                        }
+                    }
                 }
                 else
                 {
@@ -2054,6 +2203,7 @@ public class MessageView extends K9Activity implements OnClickListener
                         public void run()
                         {
                             mMessageContentView.loadUrl("file:///android_asset/empty.html");
+                            updateDecryptLayout();
                         }
                     });
                 }
@@ -2097,6 +2247,7 @@ public class MessageView extends K9Activity implements OnClickListener
                             !MessageView.this.mMessage.isSet(Flag.X_DOWNLOADED_PARTIAL))
                     {
                         mMessageContentView.loadUrl("file:///android_asset/empty.html");
+                        updateDecryptLayout();
                     }
                 }
             });
@@ -2134,7 +2285,7 @@ public class MessageView extends K9Activity implements OnClickListener
             {
                 public void run()
                 {
-                    mMessageContentView.loadUrl("file:///android_asset/loading.html");
+                    updateDecryptLayout();
                     setProgressBarIndeterminateVisibility(true);
                 }
             });
@@ -2291,7 +2442,120 @@ public class MessageView extends K9Activity implements OnClickListener
         return slide;
     }
 
+    private void initializeCrypto()
+    {
+        if (mCrypto != null)
+        {
+            return;
+        }
+        if (mAccount == null)
+        {
+            mAccount = Preferences.getPreferences(this).getAccount(mMessageReference.accountUuid);
+        }
+        mCrypto = CryptoProvider.createInstance(mAccount);
+    }
+
     /**
+     * Fill the decrypt layout with signature data, if known, make controls visible, if
+     * they should be visible.
+     */
+    public void updateDecryptLayout()
+    {
+        if (mCrypto.getSignatureKeyId() != 0)
+        {
+            mCryptoSignatureUserIdRest.setText(
+                getString(R.string.key_id, Long.toHexString(mCrypto.getSignatureKeyId() & 0xffffffffL)));
+            String userId = mCrypto.getSignatureUserId();
+            if (userId == null)
+            {
+                userId = getString(R.string.unknown_crypto_signature_user_id);
+            }
+            String chunks[] = userId.split(" <", 2);
+            String name = chunks[0];
+            if (chunks.length > 1)
+            {
+                mCryptoSignatureUserIdRest.setText("<" + chunks[1]);
+            }
+            mCryptoSignatureUserId.setText(name);
+
+            if (mCrypto.getSignatureSuccess())
+            {
+                mCryptoSignatureStatusImage.setImageResource(R.drawable.overlay_ok);
+            }
+            else if (mCrypto.getSignatureUnknown())
+            {
+                mCryptoSignatureStatusImage.setImageResource(R.drawable.overlay_error);
+            }
+            else
+            {
+                mCryptoSignatureStatusImage.setImageResource(R.drawable.overlay_error);
+            }
+            mCryptoSignatureLayout.setVisibility(View.VISIBLE);
+            mDecryptLayout.setVisibility(View.VISIBLE);
+        } else {
+            mCryptoSignatureLayout.setVisibility(View.INVISIBLE);
+        }
+
+        if (!true || ((mMessage == null) && (mCrypto.getDecryptedData() == null)))
+        {
+            mDecryptLayout.setVisibility(View.GONE);
+            return;
+        }
+
+        if (mCrypto.getDecryptedData() != null)
+        {
+            if (mCrypto.getSignatureKeyId() == 0)
+            {
+                mDecryptLayout.setVisibility(View.GONE);
+            }
+            else
+            {
+                // no need to show this after decryption/verification
+                mDecryptButton.setVisibility(View.GONE);
+            }
+            return;
+        }
+
+        mDecryptButton.setVisibility(View.VISIBLE);
+
+        if (mCrypto.isEncrypted(mMessage))
+        {
+            mDecryptButton.setText(R.string.btn_decrypt);
+            mDecryptLayout.setVisibility(View.VISIBLE);
+        }
+        else if (mCrypto.isSigned(mMessage))
+        {
+            mDecryptButton.setText(R.string.btn_verify);
+            mDecryptLayout.setVisibility(View.VISIBLE);
+        }
+        else
+        {
+            mDecryptLayout.setVisibility(View.GONE);
+            try
+            {
+                // check for PGP/MIME encryption
+                Part pgp = MimeUtility.findFirstPartByMimeType(mMessage, "application/pgp-encrypted");
+                if (pgp != null)
+                {
+                    Toast.makeText(this, R.string.pgp_mime_unsupported, Toast.LENGTH_LONG).show();
+                }
+            }
+            catch (MessagingException e)
+            {
+                // nothing to do...
+            }
+        }
+    }
+
+    public void onDecryptDone()
+    {
+        // TODO: this might not be enough if the orientation was changed while in APG,
+        // sometimes shows the original encrypted content
+        mMessageContentView.loadDataWithBaseURL("email://", mCrypto.getDecryptedData(), "text/plain", "utf-8", null);
+        updateDecryptLayout();
+    }
+
+    /*
      * Emulate the shift key being pressed to trigger the text selection mode
      * of a WebView.
      */

@@ -7,6 +7,7 @@ import android.net.ConnectivityManager;
 import android.net.Uri;
 import android.util.Log;
 
+import com.fsck.k9.crypto.Apg;
 import com.fsck.k9.helper.Utility;
 import com.fsck.k9.mail.Address;
 import com.fsck.k9.mail.Folder;
@@ -91,6 +92,7 @@ public class Account implements BaseAccount
     private boolean mNotifySync;
     private HideButtons mHideMessageViewButtons;
     private HideButtons mHideMessageViewMoveButtons;
+    private ShowPictures mShowPictures;
     private boolean mEnableMoveButtons;
     private boolean mIsSignatureBeforeQuotedText;
     private String mExpungePolicy = EXPUNGE_IMMEDIATELY;
@@ -107,6 +109,8 @@ public class Account implements BaseAccount
     private boolean mRingNotified;
     private String mQuotePrefix;
     private boolean mSyncRemoteDeletions;
+    private String mCryptoApp;
+    private boolean mCryptoAutoSignature;
 
     /**
      * Name of the folder that was last selected for a copy or move operation.
@@ -126,6 +130,11 @@ public class Account implements BaseAccount
     public enum HideButtons
     {
         NEVER, ALWAYS, KEYBOARD_AVAILABLE;
+    }
+
+    public enum ShowPictures
+    {
+        NEVER, ALWAYS, ONLY_FROM_CONTACTS;
     }
 
     public enum Searchable
@@ -157,6 +166,7 @@ public class Account implements BaseAccount
         mFolderTargetMode = FolderMode.NOT_SECOND_CLASS;
         mHideMessageViewButtons = HideButtons.NEVER;
         mHideMessageViewMoveButtons = HideButtons.NEVER;
+        mShowPictures = ShowPictures.NEVER;
         mEnableMoveButtons = false;
         mRingtoneUri = "content://settings/system/notification_sound";
         mIsSignatureBeforeQuotedText = false;
@@ -171,6 +181,8 @@ public class Account implements BaseAccount
         maximumAutoDownloadMessageSize = 32768;
         mQuotePrefix = DEFAULT_QUOTE_PREFIX;
         mSyncRemoteDeletions = true;
+        mCryptoApp = Apg.NAME;
+        mCryptoAutoSignature = false;
 
         searchableFolders = Searchable.ALL;
 
@@ -270,13 +282,11 @@ public class Account implements BaseAccount
                                   (random.nextInt(0x70) * 0xff) +
                                   (random.nextInt(0x70) * 0xffff) +
                                   0xff000000);
-
         mLedColor = prefs.getInt(mUuid+".ledColor", mChipColor);
 
         mVibrate = prefs.getBoolean(mUuid + ".vibrate", false);
         mVibratePattern = prefs.getInt(mUuid + ".vibratePattern", 0);
         mVibrateTimes = prefs.getInt(mUuid + ".vibrateTimes", 5);
-
 
         mRing = prefs.getBoolean(mUuid + ".ring", true);
 
@@ -298,6 +308,16 @@ public class Account implements BaseAccount
         catch (Exception e)
         {
             mHideMessageViewMoveButtons = HideButtons.NEVER;
+        }
+
+        try
+        {
+            mShowPictures = ShowPictures.valueOf(prefs.getString(mUuid + ".showPicturesEnum",
+                                          ShowPictures.NEVER.name()));
+        }
+        catch (Exception e)
+        {
+            mShowPictures = ShowPictures.NEVER;
         }
 
         mEnableMoveButtons = prefs.getBoolean(mUuid + ".enableMoveButtons", false);
@@ -356,6 +376,9 @@ public class Account implements BaseAccount
 
         mIsSignatureBeforeQuotedText = prefs.getBoolean(mUuid  + ".signatureBeforeQuotedText", false);
         identities = loadIdentities(prefs);
+
+        mCryptoApp = prefs.getString(mUuid + ".cryptoApp", "");
+        mCryptoAutoSignature = prefs.getBoolean(mUuid + ".cryptoAutoSignature", false);
     }
 
 
@@ -500,6 +523,7 @@ public class Account implements BaseAccount
         editor.putBoolean(mUuid + ".ring", mRing);
         editor.putString(mUuid + ".hideButtonsEnum", mHideMessageViewButtons.name());
         editor.putString(mUuid + ".hideMoveButtonsEnum", mHideMessageViewMoveButtons.name());
+        editor.putString(mUuid + ".showPicturesEnum", mShowPictures.name());
         editor.putBoolean(mUuid + ".enableMoveButtons", mEnableMoveButtons);
         editor.putString(mUuid + ".ringtone", mRingtoneUri);
         editor.putString(mUuid + ".folderDisplayMode", mFolderDisplayMode.name());
@@ -518,6 +542,8 @@ public class Account implements BaseAccount
         editor.putInt(mUuid + ".maximumPolledMessageAge", maximumPolledMessageAge);
         editor.putInt(mUuid + ".maximumAutoDownloadMessageSize", maximumAutoDownloadMessageSize);
         editor.putString(mUuid + ".quotePrefix", mQuotePrefix);
+        editor.putString(mUuid + ".cryptoApp", mCryptoApp);
+        editor.putBoolean(mUuid + ".cryptoAutoSignature", mCryptoAutoSignature);
 
         for (String type : networkTypes)
         {
@@ -558,13 +584,13 @@ public class Account implements BaseAccount
 
             // Always get stats about the INBOX (see issue 1817)
             if (folder.getName().equals(K9.INBOX) || (
-                        folder.getName().equals(getTrashFolderName()) == false &&
-                        folder.getName().equals(getDraftsFolderName()) == false &&
-                        folder.getName().equals(getArchiveFolderName()) == false &&
-                        folder.getName().equals(getSpamFolderName()) == false &&
-                        folder.getName().equals(getOutboxFolderName()) == false &&
-                        folder.getName().equals(getSentFolderName()) == false &&
-                        folder.getName().equals(getErrorFolderName()) == false))
+                        !folder.getName().equals(getTrashFolderName()) &&
+                        !folder.getName().equals(getDraftsFolderName()) &&
+                        !folder.getName().equals(getArchiveFolderName()) &&
+                        !folder.getName().equals(getSpamFolderName()) &&
+                        !folder.getName().equals(getOutboxFolderName()) &&
+                        !folder.getName().equals(getSentFolderName()) &&
+                        !folder.getName().equals(getErrorFolderName())))
             {
                 if (aMode == Account.FolderMode.NONE)
                 {
@@ -1000,6 +1026,16 @@ public class Account implements BaseAccount
         mHideMessageViewMoveButtons = hideMessageViewButtons;
     }
 
+    public synchronized ShowPictures getShowPictures()
+    {
+        return mShowPictures;
+    }
+
+    public synchronized void setShowPictures(ShowPictures showPictures)
+    {
+        mShowPictures = showPictures;
+    }
+
     public synchronized FolderMode getFolderTargetMode()
     {
         return mFolderTargetMode;
@@ -1353,7 +1389,7 @@ public class Account implements BaseAccount
     public Date getEarliestPollDate()
     {
         int age = getMaximumPolledMessageAge();
-        if (age < 0 == false)
+        if (age >= 0)
         {
             Calendar now = Calendar.getInstance();
             now.set(Calendar.HOUR_OF_DAY, 0);
@@ -1411,6 +1447,25 @@ public class Account implements BaseAccount
         mEnableMoveButtons = enableMoveButtons;
     }
 
+    public String getCryptoApp()
+    {
+        return mCryptoApp;
+    }
+
+    public void setCryptoApp(String cryptoApp)
+    {
+        mCryptoApp = cryptoApp;
+    }
+
+    public boolean getCryptoAutoSignature()
+    {
+        return mCryptoAutoSignature;
+    }
+
+    public void setCryptoAutoSignature(boolean cryptoAutoSignature)
+    {
+        mCryptoAutoSignature = cryptoAutoSignature;
+    }
     public synchronized boolean syncRemoteDeletions()
     {
         return mSyncRemoteDeletions;

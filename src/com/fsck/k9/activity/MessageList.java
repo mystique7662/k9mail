@@ -15,7 +15,6 @@ import android.content.Intent;
 import android.graphics.Typeface;
 import android.graphics.drawable.Drawable;
 import android.os.Bundle;
-import android.os.Handler;
 import android.text.Spannable;
 import android.text.style.TextAppearanceSpan;
 import android.util.Config;
@@ -80,6 +79,12 @@ public class MessageList
         extends K9Activity
         implements OnClickListener, AdapterView.OnItemClickListener
 {
+
+    /**
+     * Immutable empty {@link Message} array
+     */
+    private static final Message[] EMPTY_MESSAGE_ARRAY = new Message[0];
+
     private static final int DIALOG_MARK_ALL_AS_READ = 1;
 
     private static final int ACTIVITY_CHOOSE_FOLDER_MOVE = 1;
@@ -154,7 +159,7 @@ public class MessageList
     private Bundle mState = null;
     private MessageInfoHolder mSelectedMessage = null;
 
-    class MessageListHandler extends Handler
+    class MessageListHandler
     {
         public void removeMessage(final List<MessageInfoHolder> messages)
         {
@@ -401,6 +406,7 @@ public class MessageList
         context.startActivity(intent);
     }
 
+    @Override
     public void onItemClick(AdapterView<?> parent, View view, int position, long id)
     {
         if (mCurrentFolder != null && ((position+1) == mAdapter.getCount()))
@@ -558,7 +564,7 @@ public class MessageList
 
         if (mFolderName != null)
         {
-            mController.listLocalMessagesSynchronous(mAccount, mFolderName,  mAdapter.mListener);
+            mController.listLocalMessages(mAccount, mFolderName,  mAdapter.mListener);
             mController.notifyAccountCancel(this, mAccount);
 
             MessagingController.getInstance(getApplication()).notifyAccountCancel(this, mAccount);
@@ -1103,17 +1109,17 @@ public class MessageList
 
     private void onReply(MessageInfoHolder holder)
     {
-        MessageCompose.actionReply(this, holder.message.getFolder().getAccount(), holder.message, false);
+        MessageCompose.actionReply(this, holder.message.getFolder().getAccount(), holder.message, false, null);
     }
 
     private void onReplyAll(MessageInfoHolder holder)
     {
-        MessageCompose.actionReply(this, holder.message.getFolder().getAccount(), holder.message, true);
+        MessageCompose.actionReply(this, holder.message.getFolder().getAccount(), holder.message, true, null);
     }
 
     private void onForward(MessageInfoHolder holder)
     {
-        MessageCompose.actionForward(this, holder.message.getFolder().getAccount(), holder.message);
+        MessageCompose.actionForward(this, holder.message.getFolder().getAccount(), holder.message, null);
     }
 
     private void onMarkAllAsRead(final Account account, final String folder)
@@ -1462,6 +1468,14 @@ public class MessageList
             if (mCurrentFolder != null && K9.ERROR_FOLDER_NAME.equals(mCurrentFolder.name))
             {
                 menu.findItem(R.id.expunge).setVisible(false);
+            }
+            if (K9.FOLDER_NONE.equalsIgnoreCase(mAccount.getArchiveFolderName()))
+            {
+                menu.findItem(R.id.batch_archive_op).setVisible(false);
+            }
+            if (K9.FOLDER_NONE.equalsIgnoreCase(mAccount.getSpamFolderName()))
+            {
+                menu.findItem(R.id.batch_spam_op).setVisible(false);
             }
         }
 
@@ -2043,7 +2057,7 @@ public class MessageList
 
             if (messagesToSearch.size() > 0)
             {
-                mController.searchLocalMessages(mAccountUuids, mFolderNames, messagesToSearch.toArray(new Message[0]), mQueryString, mIntegrate, mQueryFlags, mForbiddenFlags,
+                mController.searchLocalMessages(mAccountUuids, mFolderNames, messagesToSearch.toArray(EMPTY_MESSAGE_ARRAY), mQueryString, mIntegrate, mQueryFlags, mForbiddenFlags,
                                                 new MessagingListener()
                 {
                     @Override
@@ -2124,16 +2138,24 @@ public class MessageList
         }
 
         private static final int NON_MESSAGE_ITEMS = 1;
+
+        private final OnClickListener flagClickListener = new OnClickListener()
+        {
+            public void onClick(View v)
+            {
+                // Perform action on clicks
+                MessageInfoHolder message = (MessageInfoHolder) getItem((Integer)v.getTag());
+                onToggleFlag(message);
+            }
+        };
+
+        @Override
         public int getCount()
         {
-            if (mAdapter.messages.size() == 0)
-            {
-                return NON_MESSAGE_ITEMS ;
-            }
-
-            return mAdapter.messages.size() + NON_MESSAGE_ITEMS  ;
+            return messages.size() + NON_MESSAGE_ITEMS;
         }
 
+        @Override
         public long getItemId(int position)
         {
             try
@@ -2156,6 +2178,7 @@ public class MessageList
             return getItem((int)position);
         }
 
+        @Override
         public Object getItem(int position)
         {
             try
@@ -2175,6 +2198,7 @@ public class MessageList
             return null;
         }
 
+        @Override
         public View getView(int position, View convertView, ViewGroup parent)
         {
 
@@ -2224,16 +2248,7 @@ public class MessageList
                 holder.selected = (CheckBox) view.findViewById(R.id.selected_checkbox);
                 holder.flagged = (CheckBox) view.findViewById(R.id.flagged);
 
-                // TODO: Don't create an instance of OnClickListener for every message
-                holder.flagged.setOnClickListener(new OnClickListener()
-                {
-                    public void onClick(View v)
-                    {
-                        // Perform action on clicks
-                        MessageInfoHolder message = (MessageInfoHolder) getItem((Integer)v.getTag());
-                        onToggleFlag(message);
-                    }
-                });
+                holder.flagged.setOnClickListener(flagClickListener);
 
                 if (mStars == false)
                 {
@@ -2255,74 +2270,7 @@ public class MessageList
 
             if (message != null)
             {
-                holder.subject.setTypeface(null, message.read ? Typeface.NORMAL : Typeface.BOLD);
-
-                // XXX TODO there has to be some way to walk our view hierarchy and get this
-                holder.flagged.setTag((Integer)position);
-                holder.flagged.setChecked(message.flagged);
-
-                // So that the mSelectedCount is only incremented/decremented
-                // when a user checks the checkbox (vs code)
-                holder.position = -1;
-                holder.selected.setChecked(message.selected);
-
-                if (!mCheckboxes)
-                {
-                    holder.selected.setVisibility(message.selected ? View.VISIBLE : View.GONE);
-                }
-
-                holder.chip.setBackgroundColor(message.message.getFolder().getAccount().getChipColor());
-                holder.chip.getBackground().setAlpha(message.read ? 127 : 255);
-                view.getBackground().setAlpha(message.downloaded ? 0 : 127);
-
-                if ((message.subject == null) || message.subject.equals(""))
-                {
-                    holder.subject.setText(getText(R.string.general_no_subject));
-                }
-                else
-                {
-                    holder.subject.setText(message.subject);
-                }
-
-                if (holder.preview != null)
-                {
-                    /*
-                     * In the touchable UI, we have previews. Otherwise, we
-                     * have just a "from" line.
-                     * Because text views can't wrap around each other(?) we
-                     * compose a custom view containing the preview and the
-                     * from.
-                     */
-                    holder.preview.setText(message.sender + " " + message.preview,
-                                           TextView.BufferType.SPANNABLE);
-                    Spannable str = (Spannable)holder.preview.getText();
-
-                    // Create our span sections, and assign a format to each.
-                    str.setSpan(
-                        new TextAppearanceSpan(
-                            null,
-                            Typeface.BOLD,
-                            -1,
-                            holder.subject.getTextColors(),
-                            holder.subject.getLinkTextColors()),
-                        0,
-                        message.sender.length(),
-                        Spannable.SPAN_EXCLUSIVE_EXCLUSIVE
-                    );
-                }
-                else
-                {
-                    holder.from.setText(message.sender);
-                    holder.from.setTypeface(null, message.read ? Typeface.NORMAL : Typeface.BOLD);
-                }
-
-                holder.date.setText(message.date);
-                holder.subject.setCompoundDrawablesWithIntrinsicBounds(
-                    message.answered ? mAnsweredIcon : null, // left
-                    null, // top
-                    message.hasAttachments ? mAttachmentIcon : null, // right
-                    null); // bottom
-                holder.position = position;
+                bindView(position, view, holder, message);
             }
             else
             {
@@ -2370,6 +2318,93 @@ public class MessageList
             }
 
             return view;
+        }
+
+        /**
+         * Associate model data to view object.
+         * 
+         * @param position
+         *            The position of the item within the adapter's data set of
+         *            the item whose view we want.
+         * @param view
+         *            Main view component to alter. Never <code>null</code>.
+         * @param holder
+         *            Convenience view holder - eases access to <tt>view</tt>
+         *            child views. Never <code>null</code>.
+         * @param message
+         *            Never <code>null</code>.
+         */
+        private void bindView(final int position, final View view, final MessageViewHolder holder,
+                final MessageInfoHolder message)
+        {
+            holder.subject.setTypeface(null, message.read ? Typeface.NORMAL : Typeface.BOLD);
+
+            // XXX TODO there has to be some way to walk our view hierarchy and get this
+            holder.flagged.setTag((Integer)position);
+            holder.flagged.setChecked(message.flagged);
+
+            // So that the mSelectedCount is only incremented/decremented
+            // when a user checks the checkbox (vs code)
+            holder.position = -1;
+            holder.selected.setChecked(message.selected);
+
+            if (!mCheckboxes)
+            {
+                holder.selected.setVisibility(message.selected ? View.VISIBLE : View.GONE);
+            }
+
+            holder.chip.setBackgroundColor(message.message.getFolder().getAccount().getChipColor());
+            holder.chip.getBackground().setAlpha(message.read ? 127 : 255);
+            view.getBackground().setAlpha(message.downloaded ? 0 : 127);
+
+            if ((message.subject == null) || message.subject.equals(""))
+            {
+                holder.subject.setText(getText(R.string.general_no_subject));
+            }
+            else
+            {
+                holder.subject.setText(message.subject);
+            }
+
+            if (holder.preview != null)
+            {
+                /*
+                 * In the touchable UI, we have previews. Otherwise, we
+                 * have just a "from" line.
+                 * Because text views can't wrap around each other(?) we
+                 * compose a custom view containing the preview and the
+                 * from.
+                 */
+                holder.preview.setText(message.sender + " " + message.preview,
+                                       TextView.BufferType.SPANNABLE);
+                Spannable str = (Spannable)holder.preview.getText();
+
+                // Create our span sections, and assign a format to each.
+                str.setSpan(
+                    new TextAppearanceSpan(
+                        null,
+                        Typeface.BOLD,
+                        -1,
+                        holder.subject.getTextColors(),
+                        holder.subject.getLinkTextColors()),
+                    0,
+                    message.sender.length(),
+                    Spannable.SPAN_EXCLUSIVE_EXCLUSIVE
+                );
+            }
+            else
+            {
+                holder.from.setText(message.sender);
+                holder.from.setTypeface(null, message.read ? Typeface.NORMAL : Typeface.BOLD);
+            }
+
+            holder.date.setText(message.date);
+            holder.subject.setCompoundDrawablesWithIntrinsicBounds(
+                message.answered ? mAnsweredIcon : null, // left
+                null, // top
+                message.hasAttachments ? mAttachmentIcon : null, // right
+                null); // bottom
+            holder.position = position;
         }
 
         public View getFooterView(int position, View convertView, ViewGroup parent)
@@ -2554,6 +2589,7 @@ public class MessageList
             return uid.hashCode();
         }
 
+        @Override
         public int compareTo(MessageInfoHolder o)
         {
             int ascender = (sortAscending ? 1 : -1);
@@ -2645,6 +2681,7 @@ public class MessageList
         public CheckBox selected;
         public int position = -1;
 
+        @Override
         public void onCheckedChanged(CompoundButton buttonView, boolean isChecked)
         {
             if (position!=-1)
@@ -2854,6 +2891,7 @@ public class MessageList
         return false;
     }
 
+    @Override
     public void onClick(View v)
     {
         boolean newState = false;
@@ -2903,13 +2941,13 @@ public class MessageList
         {
             if (v == mBatchDeleteButton)
             {
-                mController.deleteMessages(messageList.toArray(new Message[0]), null);
+                mController.deleteMessages(messageList.toArray(EMPTY_MESSAGE_ARRAY), null);
                 mSelectedCount = 0;
                 toggleBatchButtons();
             }
             else
             {
-                mController.setFlag(messageList.toArray(new Message[0]), (v == mBatchReadButton ? Flag.SEEN : Flag.FLAGGED), newState);
+                mController.setFlag(messageList.toArray(EMPTY_MESSAGE_ARRAY), (v == mBatchReadButton ? Flag.SEEN : Flag.FLAGGED), newState);
             }
         }
         else
@@ -2967,7 +3005,7 @@ public class MessageList
                 }
             }
         }
-        mController.setFlag(messageList.toArray(new Message[0]), flag, newState);
+        mController.setFlag(messageList.toArray(EMPTY_MESSAGE_ARRAY), flag, newState);
         mHandler.sortMessages();
     }
 
@@ -2988,7 +3026,7 @@ public class MessageList
         }
         mAdapter.removeMessages(removeHolderList);
 
-        mController.deleteMessages(messageList.toArray(new Message[0]), null);
+        mController.deleteMessages(messageList.toArray(EMPTY_MESSAGE_ARRAY), null);
         mSelectedCount = 0;
         toggleBatchButtons();
     }
@@ -3056,7 +3094,7 @@ public class MessageList
         }
         mAdapter.removeMessages(removeHolderList);
 
-        mController.moveMessages(mAccount, mCurrentFolder.name, messageList.toArray(new Message[0]), folderName, null);
+        mController.moveMessages(mAccount, mCurrentFolder.name, messageList.toArray(EMPTY_MESSAGE_ARRAY), folderName, null);
         mSelectedCount = 0;
         toggleBatchButtons();
     }
@@ -3184,6 +3222,6 @@ public class MessageList
                 }
             }
         }
-        mController.copyMessages(mAccount, mCurrentFolder.name, messageList.toArray(new Message[0]), folderName, null);
+        mController.copyMessages(mAccount, mCurrentFolder.name, messageList.toArray(EMPTY_MESSAGE_ARRAY), folderName, null);
     }
 }
