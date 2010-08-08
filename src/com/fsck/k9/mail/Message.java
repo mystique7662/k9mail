@@ -4,13 +4,10 @@ package com.fsck.k9.mail;
 import java.util.Date;
 import java.util.HashSet;
 import java.util.Set;
-import com.fsck.k9.activity.MessageReference;
 
 public abstract class Message implements Part, Body
 {
     private static final Flag[] EMPTY_FLAG_ARRAY = new Flag[0];
-
-    private MessageReference mReference = null;
 
     public enum RecipientType
     {
@@ -74,7 +71,6 @@ public abstract class Message implements Part, Body
 
     public void setUid(String uid)
     {
-        mReference = null;
         this.mUid = uid;
     }
 
@@ -195,21 +191,4 @@ public abstract class Message implements Part, Body
 
     public abstract void setEncoding(String encoding);
 
-    public MessageReference makeMessageReference()
-    {
-        if (mReference == null)
-        {
-            mReference = new MessageReference();
-            mReference.accountUuid = getFolder().getAccount().getUuid();
-            mReference.folderName = getFolder().getName();
-            mReference.uid = mUid;
-        }
-        return mReference;
-    }
-
-    public boolean equalsReference(MessageReference ref)
-    {
-        MessageReference tmpReference = makeMessageReference();
-        return tmpReference.equals(ref);
-    }
 }

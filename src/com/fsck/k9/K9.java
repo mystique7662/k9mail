@@ -274,57 +274,12 @@ public class K9 extends Application
     {
         int acctLength = Preferences.getPreferences(context).getAccounts().length;
 
-        setServicesEnabled(context, acctLength > 0, null);
-
+        /* setServicesEnabled(context, acctLength > 0, null); */
     }
 
     public static void setServicesEnabled(Context context, Integer wakeLockId)
     {
-        setServicesEnabled(context, Preferences.getPreferences(context).getAccounts().length > 0, wakeLockId);
-    }
-
-    public static void setServicesEnabled(Context context, boolean enabled, Integer wakeLockId)
-    {
-
-        PackageManager pm = context.getPackageManager();
-
-        if (!enabled && pm.getComponentEnabledSetting(new ComponentName(context, MailService.class)) ==
-                PackageManager.COMPONENT_ENABLED_STATE_ENABLED)
-        {
-            /*
-             * If no accounts now exist but the service is still enabled we're about to disable it
-             * so we'll reschedule to kill off any existing alarms.
-             */
-            MailService.actionReset(context, wakeLockId);
-        }
-        Class<?>[] classes = { MessageCompose.class, BootReceiver.class, MailService.class };
-
-        for (Class<?> clazz : classes)
-        {
-
-            boolean alreadyEnabled = pm.getComponentEnabledSetting(new ComponentName(context, clazz)) ==
-                                     PackageManager.COMPONENT_ENABLED_STATE_ENABLED;
-
-            if (enabled != alreadyEnabled)
-            {
-                pm.setComponentEnabledSetting(
-                    new ComponentName(context, clazz),
-                    enabled ? PackageManager.COMPONENT_ENABLED_STATE_ENABLED :
-                    PackageManager.COMPONENT_ENABLED_STATE_DISABLED,
-                    PackageManager.DONT_KILL_APP);
-            }
-        }
-
-        if (enabled && pm.getComponentEnabledSetting(new ComponentName(context, MailService.class)) ==
-                PackageManager.COMPONENT_ENABLED_STATE_ENABLED)
-        {
-            /*
-             * And now if accounts do exist then we've just enabled the service and we want to
-             * schedule alarms for the new accounts.
-             */
-            MailService.actionReset(context, wakeLockId);
-        }
-
+        /* setServicesEnabled(context, Preferences.getPreferences(context).getAccounts().length > 0, wakeLockId); */
     }
 
     public static void save(SharedPreferences.Editor editor)
