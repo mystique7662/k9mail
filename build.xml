@@ -140,8 +140,10 @@
     </target>
 
     <target name="jar" depends="compile">
-        <jar destfile="bin/k9-imapstore.jar" basedir="bin/classes"
-        />
+        <jar destfile="bin/k9-imapstore.jar" basedir="bin/classes">
+          <exclude name="com/fsck/k9/activity/**/*"/>
+          <exclude name="com/fsck/k9/service/**/*"/>
+        </jar>
     </target>
 
     <target name="help">
