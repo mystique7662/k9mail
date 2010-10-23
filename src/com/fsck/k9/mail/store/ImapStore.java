@@ -99,6 +99,7 @@ public class ImapStore extends Store
     private volatile String mPathDelimeter = null;
 
     public static final SimpleDateFormat RFC3501_DATE = new SimpleDateFormat("dd-MMM-yyyy", Locale.US);
+    public static final SimpleDateFormat INTERNAL_DATE = new SimpleDateFormat("dd-MMM-yyyy HH:mm:ss Z", Locale.US);
 
     private LinkedList<ImapConnection> mConnections =
         new LinkedList<ImapConnection>();
@@ -1804,10 +1805,14 @@ public class ImapStore extends Store
                     message.writeTo(eolOut);
                     eolOut.flush();
 
+                    Date internalDate = message.getInternalDate() == null ?
+                      new Date() : message.getInternalDate();
+
                     mConnection.sendCommand(
-                        String.format("APPEND \"%s\" (%s) {%d}",
+                        String.format("APPEND \"%s\" (%s) \"%s\" {%d}",
                                       encodeFolderName(getPrefixedName()),
                                       combineFlags(message.getFlags()),
+                                      INTERNAL_DATE.format(internalDate),
                                       out.getCount()), false);
                     ImapResponse response;
                     do
