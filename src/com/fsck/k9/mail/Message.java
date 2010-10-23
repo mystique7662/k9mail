@@ -191,4 +191,5 @@ public abstract class Message implements Part, Body
 
     public abstract void setEncoding(String encoding);
 
+    public java.io.Serializable makeMessageReference() { return null; }
 }

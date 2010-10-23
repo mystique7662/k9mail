@@ -816,11 +816,11 @@ public class MessageList
             {
                 for (MessageInfoHolder holder : mAdapter.messages)
                 {
-                    MessageReference ref = holder.message.makeMessageReference();
+                    MessageReference ref = null; // holder.message.makeMessageReference();
                     messageRefs.add(ref);
                 }
             }
-            MessageReference ref = message.message.makeMessageReference();
+            MessageReference ref = null; // message.message.makeMessageReference();
             Log.i(K9.LOG_TAG, "MessageList sending message " + ref);
 
             MessageView.actionView(this, ref, messageRefs);
@@ -2087,7 +2087,7 @@ public class MessageList
 
         public MessageInfoHolder getMessage(Message message)
         {
-            return getMessage(message.makeMessageReference());
+            return null; //getMessage(message.makeMessageReference());
         }
 
         // XXX TODO - make this not use a for loop
@@ -2105,10 +2105,12 @@ public class MessageList
                      * Please remove this comment once the cause was found and the
                      * bug(?) fixed.
                      */
+                    /*
                     if ((holder != null) && holder.message.equalsReference(messageReference))
                     {
                         return holder;
                     }
+                    */
                 }
             }
             return null;
