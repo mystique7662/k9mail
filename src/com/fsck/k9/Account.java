@@ -190,8 +190,8 @@ public class Account implements BaseAccount
 
         Identity identity = new Identity();
         identity.setSignatureUse(true);
-        identity.setSignature(context.getString(R.string.default_signature));
-        identity.setDescription(context.getString(R.string.default_identity_description));
+        //identity.setSignature(context.getString(R.string.default_signature));
+        //identity.setDescription(context.getString(R.string.default_identity_description));
         identities.add(identity);
     }
 
