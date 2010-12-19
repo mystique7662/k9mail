@@ -5,13 +5,17 @@ import android.content.Intent;
 import android.os.Bundle;
 import android.os.Handler;
 import android.util.Log;
+import android.view.Menu;
+import android.view.MenuItem;
 import android.view.View;
 import android.view.Window;
 import android.widget.AdapterView;
 import android.widget.ArrayAdapter;
+import android.widget.Filter;
 import android.widget.ListView;
 import android.widget.TextView;
 import com.fsck.k9.*;
+import com.fsck.k9.Account.FolderMode;
 import com.fsck.k9.controller.MessagingController;
 import com.fsck.k9.controller.MessagingListener;
 import com.fsck.k9.mail.Folder;
@@ -26,12 +30,26 @@ public class ChooseFolder extends K9ListActivity
     String mSelectFolder;
     Account mAccount;
     MessageReference mMessageReference;
-    ArrayAdapter<String> adapter;
+    ArrayAdapter<String> mAdapter;
     private ChooseFolderHandler mHandler = new ChooseFolderHandler();
     String heldInbox = null;
     boolean hideCurrentFolder = true;
     boolean showOptionNone = false;
     boolean showDisplayableOnly = false;
+
+    /**
+     * What folders to display.<br/>
+     * Initialized to whatever is configured
+     * but can be overridden via {@link #onOptionsItemSelected(MenuItem)}
+     * while this activity is showing.
+     */
+    private Account.FolderMode mMode;
+    /**
+     * Current filter used by our ArrayAdapter.<br/>
+     * Created on the fly and invalidated if a new
+     * set of folders is chosen via {@link #onOptionsItemSelected(MenuItem)}
+     */
+    private FolderListFilter<String> myFilter = null;
 
     public static final String EXTRA_ACCOUNT = "com.fsck.k9.ChooseFolder_account";
     public static final String EXTRA_CUR_FOLDER = "com.fsck.k9.ChooseFolder_curfolder";
@@ -49,7 +67,6 @@ public class ChooseFolder extends K9ListActivity
 
         requestWindowFeature(Window.FEATURE_INDETERMINATE_PROGRESS);
         getListView().setFastScrollEnabled(true);
-        getListView().setTextFilterEnabled(true);
         getListView().setItemsCanFocus(false);
         getListView().setChoiceMode(ListView.CHOICE_MODE_NONE);
         Intent intent = getIntent();
@@ -73,13 +90,25 @@ public class ChooseFolder extends K9ListActivity
         if (mFolder == null)
             mFolder = "";
 
-        adapter = new ArrayAdapter<String>(this, android.R.layout.simple_list_item_1);
+        mAdapter = new ArrayAdapter<String>(this, android.R.layout.simple_list_item_1)
+        {
+            private Filter myFilter = null;
 
-        setListAdapter(adapter);
+            @Override
+            public Filter getFilter()
+            {
+                if (myFilter == null)
+                {
+                    myFilter = new FolderListFilter<String>(this);
+                }
+                return myFilter;
+            }
+        };
+
+        setListAdapter(mAdapter);
 
 
-        MessagingController.getInstance(getApplication()).listFolders(mAccount,
-                false, mListener);
+        MessagingController.getInstance(getApplication()).listFolders(mAccount, false, mListener);
 
 
         this.getListView().setOnItemClickListener(new AdapterView.OnItemClickListener()
@@ -120,7 +149,14 @@ public class ChooseFolder extends K9ListActivity
                     setProgressBarIndeterminateVisibility(msg.arg1 != 0);
                     break;
                 case MSG_DATA_CHANGED:
-                    adapter.notifyDataSetChanged();
+                    mAdapter.notifyDataSetChanged();
+
+                    /*
+                     * Only enable the text filter after the list has been
+                     * populated to avoid possible race conditions because our
+                     * FolderListFilter isn't really thread-safe.
+                     */
+                    getListView().setTextFilterEnabled(true);
                     break;
                 case MSG_SET_SELECTED_FOLDER:
                     getListView().setSelection(msg.arg1);
@@ -148,6 +184,57 @@ public class ChooseFolder extends K9ListActivity
         {
             sendEmptyMessage(MSG_DATA_CHANGED);
         }
+    }
+
+    @Override public boolean onCreateOptionsMenu(Menu menu)
+    {
+        super.onCreateOptionsMenu(menu);
+        getMenuInflater().inflate(R.menu.folder_select_option, menu);
+        return true;
+    }
+
+    @Override public boolean onOptionsItemSelected(MenuItem item)
+    {
+        switch (item.getItemId())
+        {
+
+
+            case R.id.display_1st_class:
+            {
+                setDisplayMode(FolderMode.FIRST_CLASS);
+                return true;
+            }
+            case R.id.display_1st_and_2nd_class:
+            {
+                setDisplayMode(FolderMode.FIRST_AND_SECOND_CLASS);
+                return true;
+            }
+            case R.id.display_not_second_class:
+            {
+                setDisplayMode(FolderMode.NOT_SECOND_CLASS);
+                return true;
+            }
+            case R.id.display_all:
+            {
+                setDisplayMode(FolderMode.ALL);
+                return true;
+            }
+            default:
+                return super.onOptionsItemSelected(item);
+        }
+    }
+
+    private void setDisplayMode(FolderMode aMode)
+    {
+        mMode = aMode;
+        // invalidate the current filter as it is working on an inval
+        if (myFilter != null)
+        {
+            myFilter.invalidate();
+        }
+        //re-populate the list
+        MessagingController.getInstance(getApplication()).listFolders(mAccount,
+                false, mListener);
     }
 
     private MessagingListener mListener = new MessagingListener()
@@ -188,15 +275,7 @@ public class ChooseFolder extends K9ListActivity
             {
                 return;
             }
-            Account.FolderMode aMode = Account.FolderMode.ALL;
-            if (showDisplayableOnly)
-            {
-                aMode = account.getFolderDisplayMode();
-            }
-            else
-            {
-                aMode = account.getFolderTargetMode();
-            }
+            Account.FolderMode aMode = mMode;
             Preferences prefs = Preferences.getPreferences(getApplication().getApplicationContext());
             ArrayList<String> localFolders = new ArrayList<String>();
 
@@ -261,20 +340,20 @@ public class ChooseFolder extends K9ListActivity
                     return aName.compareToIgnoreCase(bName);
                 }
             });
-            adapter.setNotifyOnChange(false);
-            adapter.clear();
+            mAdapter.setNotifyOnChange(false);
+            mAdapter.clear();
             int selectedFolder = -1;
             int position = 0;
             for (String name : localFolders)
             {
                 if (K9.INBOX.equalsIgnoreCase(name))
                 {
-                    adapter.add(getString(R.string.special_mailbox_name_inbox));
+                    mAdapter.add(getString(R.string.special_mailbox_name_inbox));
                     heldInbox = name;
                 }
-                else
+                else if (!K9.ERROR_FOLDER_NAME.equals(name))
                 {
-                    adapter.add(name);
+                    mAdapter.add(name);
                 }
 
                 if (mSelectFolder != null)

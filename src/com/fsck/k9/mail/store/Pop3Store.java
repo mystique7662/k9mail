@@ -147,7 +147,7 @@ public class Pop3Store extends Store
     }
 
     @Override
-    public Folder getFolder(String name) throws MessagingException
+    public Folder getFolder(String name)
     {
         Folder folder = mFolders.get(name);
         if (folder == null)
@@ -330,7 +330,7 @@ public class Pop3Store extends Store
         }
 
         @Override
-        public OpenMode getMode() throws MessagingException
+        public OpenMode getMode()
         {
             return OpenMode.READ_WRITE;
         }
@@ -458,6 +458,17 @@ public class Pop3Store extends Store
             for (int msgNum = start; msgNum <= end; msgNum++)
             {
                 Pop3Message message = mMsgNumToMsgMap.get(msgNum);
+                if (message == null)
+                {
+                    /*
+                     * There could be gaps in the message numbers or malformed
+                     * responses which lead to "gaps" in mMsgNumToMsgMap.
+                     *
+                     * See issue 2252
+                     */
+                    continue;
+                }
+
                 if (listener != null)
                 {
                     listener.messageStarted(message.getUid(), i++, (end - start) + 1);
@@ -585,21 +596,26 @@ public class Pop3Store extends Store
                     break;
                 }
                 String[] uidParts = response.split(" ");
-                Integer msgNum = Integer.valueOf(uidParts[0]);
-                String msgUid = uidParts[1];
-                if (unindexedUids.contains(msgUid))
-                {
-                    if (K9.DEBUG && K9.DEBUG_PROTOCOL_POP3)
-                    {
-                        Log.d(K9.LOG_TAG, "Got msgNum " + msgNum + " for UID " + msgUid);
-                    }
 
-                    Pop3Message message = mUidToMsgMap.get(msgUid);
-                    if (message == null)
-                    {
-                        message = new Pop3Message(msgUid, this);
-                    }
-                    indexMessage(msgNum, message);
+                // Ignore messages without a unique-id
+                if (uidParts.length >= 2)
+                {
+	                Integer msgNum = Integer.valueOf(uidParts[0]);
+	                String msgUid = uidParts[1];
+	                if (unindexedUids.contains(msgUid))
+	                {
+	                    if (K9.DEBUG && K9.DEBUG_PROTOCOL_POP3)
+	                    {
+	                        Log.d(K9.LOG_TAG, "Got msgNum " + msgNum + " for UID " + msgUid);
+	                    }
+
+	                    Pop3Message message = mUidToMsgMap.get(msgUid);
+	                    if (message == null)
+	                    {
+	                        message = new Pop3Message(msgUid, this);
+	                    }
+	                    indexMessage(msgNum, message);
+	                }
                 }
             }
         }
@@ -852,7 +868,7 @@ public class Pop3Store extends Store
         }
 
         @Override
-        public Flag[] getPermanentFlags() throws MessagingException
+        public Flag[] getPermanentFlags()
         {
             return PERMANENT_FLAGS;
         }
@@ -974,7 +990,7 @@ public class Pop3Store extends Store
             mOut.flush();
         }
 
-        private Pop3Capabilities getCapabilities() throws IOException, MessagingException
+        private Pop3Capabilities getCapabilities() throws IOException
         {
             Pop3Capabilities capabilities = new Pop3Capabilities();
             try
@@ -1090,9 +1106,9 @@ public class Pop3Store extends Store
 
     }//Pop3Folder
 
-    class Pop3Message extends MimeMessage
+    static class Pop3Message extends MimeMessage
     {
-        public Pop3Message(String uid, Pop3Folder folder) throws MessagingException
+        public Pop3Message(String uid, Pop3Folder folder)
         {
             mUid = uid;
             mFolder = folder;
@@ -1132,7 +1148,7 @@ public class Pop3Store extends Store
         }
     }
 
-    class Pop3Capabilities
+    static class Pop3Capabilities
     {
         public boolean stls;
         public boolean top;
@@ -1152,7 +1168,7 @@ public class Pop3Store extends Store
         }
     }
 
-    class Pop3ResponseInputStream extends InputStream
+    static class Pop3ResponseInputStream extends InputStream
     {
         InputStream mIn;
         boolean mStartOfLine = true;

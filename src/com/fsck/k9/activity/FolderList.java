@@ -20,16 +20,19 @@ import android.widget.AdapterView.AdapterContextMenuInfo;
 import android.widget.AdapterView.OnItemClickListener;
 import com.fsck.k9.*;
 import com.fsck.k9.Account.FolderMode;
+import com.fsck.k9.activity.FolderInfoHolder;
 import com.fsck.k9.activity.setup.Prefs;
 import com.fsck.k9.activity.setup.AccountSettings;
 import com.fsck.k9.activity.setup.FolderSettings;
 import com.fsck.k9.controller.MessagingController;
 import com.fsck.k9.controller.MessagingListener;
+import com.fsck.k9.helper.SizeFormatter;
 import com.fsck.k9.helper.power.TracingPowerManager;
 import com.fsck.k9.helper.power.TracingPowerManager.TracingWakeLock;
 import com.fsck.k9.mail.Flag;
 import com.fsck.k9.mail.Folder;
 import com.fsck.k9.mail.Message;
+import com.fsck.k9.mail.store.LocalStore.LocalFolder;
 import com.fsck.k9.mail.MessagingException;
 import com.fsck.k9.service.MailService;
 import java.util.ArrayList;
@@ -69,6 +72,7 @@ public class FolderList extends K9ListActivity
     private int mUnreadMessageCount;
 
     private FontSizes mFontSizes = K9.getFontSizes();
+    private Context context;
 
     class FolderListHandler extends Handler
     {
@@ -293,6 +297,8 @@ public class FolderList extends K9ListActivity
         mInflater = getLayoutInflater();
 
         onNewIntent(getIntent());
+
+        context = this;
     }
 
     @Override
@@ -305,6 +311,13 @@ public class FolderList extends K9ListActivity
         mUnreadMessageCount = 0;
         String accountUuid = intent.getStringExtra(EXTRA_ACCOUNT);
         mAccount = Preferences.getPreferences(this).getAccount(accountUuid);
+
+        if (mAccount == null)
+        {
+            // This shouldn't normally happen. But apparently it does. See issue 2261.
+            finish();
+            return;
+        }
 
         initialFolder = intent.getStringExtra(EXTRA_INITIAL_FOLDER);
         boolean fromNotification = intent.getBooleanExtra(EXTRA_FROM_NOTIFICATION, false);
@@ -353,7 +366,7 @@ public class FolderList extends K9ListActivity
 
     @Override public Object onRetainNonConfigurationInstance()
     {
-        return mAdapter.mFolders;
+        return (mAdapter == null) ? null : mAdapter.mFolders;
     }
 
     @Override public void onPause()
@@ -371,6 +384,13 @@ public class FolderList extends K9ListActivity
     {
         super.onResume();
 
+        if (!mAccount.isAvailable(this))
+        {
+            Log.i(K9.LOG_TAG, "account unavaliabale, not showing folder-list but account-list");
+            startActivity(new Intent(this, Accounts.class));
+            finish();
+            return;
+        }
         if (mAdapter == null)
             initializeActivityView();
 
@@ -384,6 +404,7 @@ public class FolderList extends K9ListActivity
     }
 
 
+    @Override
     public void onBackPressed()
     {
         // This will be called either automatically for you on 2.0
@@ -519,10 +540,42 @@ public class FolderList extends K9ListActivity
         MessagingController.getInstance(getApplication()).expunge(account, folderName, null);
     }
 
-    private void checkMail(final Account account)
+
+    private void onClearFolder(Account account, String folderName)
     {
-        MessagingController.getInstance(getApplication()).checkMail(this, account, true, true, mAdapter.mListener);
+        // There has to be a cheaper way to get at the localFolder object than this
+        LocalFolder localFolder = null;
+        try
+        {
+            if (account == null || folderName == null || !account.isAvailable(FolderList.this))
+            {
+                Log.i(K9.LOG_TAG, "not clear folder of unavailable account");
+                return;
+            }
+            localFolder = account.getLocalStore().getFolder(folderName);
+            localFolder.open(Folder.OpenMode.READ_WRITE);
+            if (localFolder != null)
+            {
+                localFolder.clearAllMessages();
+            }
+        }
+        catch (Exception e)
+        {
+            Log.e(K9.LOG_TAG, "Exception while clearing folder", e);
+        }
+        finally
+        {
+            if (localFolder != null)
+            {
+                localFolder.close();
+            }
+        }
+
     }
+
+
+
+
 
     private void sendMail(Account account)
     {
@@ -539,7 +592,7 @@ public class FolderList extends K9ListActivity
                 return true;
 
             case R.id.check_mail:
-                checkMail(mAccount);
+                MessagingController.getInstance(getApplication()).checkMail(this, mAccount, true, true, mAdapter.mListener);
 
                 return true;
 
@@ -661,6 +714,10 @@ public class FolderList extends K9ListActivity
                 onExpunge(mAccount, folder.name);
 
                 break;
+
+            case R.id.clear_local_folder:
+                onClearFolder(mAccount,folder.name);
+                break;
         }
 
         return super.onContextItemSelected(item);
@@ -759,7 +816,7 @@ public class FolderList extends K9ListActivity
         if (!folder.name.equals(mAccount.getTrashFolderName()))
             menu.findItem(R.id.empty_trash).setVisible(false);
 
-        if (folder.outbox)
+        if (folder.name.equals(mAccount.getOutboxFolderName()))
         {
             menu.findItem(R.id.check_mail).setVisible(false);
         }
@@ -773,16 +830,6 @@ public class FolderList extends K9ListActivity
         }
 
         menu.setHeaderTitle(folder.displayName);
-    }
-
-    private String truncateStatus(String mess)
-    {
-        if (mess != null && mess.length() > 27)
-        {
-            mess = mess.substring(0, 27);
-        }
-
-        return mess;
     }
 
     class FolderListAdapter extends BaseAdapter
@@ -828,6 +875,10 @@ public class FolderList extends K9ListActivity
             public void accountStatusChanged(BaseAccount account, AccountStats stats)
             {
                 if (!account.equals(mAccount))
+                {
+                    return;
+                }
+                if (stats == null)
                 {
                     return;
                 }
@@ -931,11 +982,11 @@ public class FolderList extends K9ListActivity
 
                     if (holder == null)
                     {
-                        holder = new FolderInfoHolder(folder, unreadMessageCount);
+                        holder = new FolderInfoHolder(context, folder, mAccount, unreadMessageCount);
                     }
                     else
                     {
-                        holder.populate(folder, unreadMessageCount);
+                        holder.populate(context, folder, mAccount, unreadMessageCount);
 
                     }
                     if (folder.isInTopGroup())
@@ -1031,6 +1082,11 @@ public class FolderList extends K9ListActivity
                 {
                     if (account != null && folderName != null)
                     {
+                        if (!account.isAvailable(FolderList.this))
+                        {
+                            Log.i(K9.LOG_TAG, "not refreshing folder of unavailable account");
+                            return;
+                        }
                         localFolder = account.getLocalStore().getFolder(folderName);
                         int unreadMessageCount = localFolder.getUnreadMessageCount();
                         if (localFolder != null)
@@ -1038,7 +1094,7 @@ public class FolderList extends K9ListActivity
                             FolderInfoHolder folderHolder = getFolder(folderName);
                             if (folderHolder != null)
                             {
-                                folderHolder.populate(localFolder, unreadMessageCount);
+                                folderHolder.populate(context, localFolder, mAccount, unreadMessageCount);
                                 mHandler.dataChanged();
                             }
                         }
@@ -1384,148 +1440,7 @@ public class FolderList extends K9ListActivity
 
     }
 
-    public class FolderInfoHolder implements Comparable<FolderInfoHolder>
-    {
-        public String name;
-
-        public String displayName;
-
-        public long lastChecked;
-
-        public int unreadMessageCount;
-
-        public int flaggedMessageCount;
-
-        public boolean loading;
-
-        public String status;
-
-        public boolean pushActive;
-
-        public boolean lastCheckFailed;
-
-        /**
-         * Outbox is handled differently from any other folder.
-         */
-        public boolean outbox;
-
-
-        @Override
-        public boolean equals(Object o)
-        {
-            return this.name.equals(((FolderInfoHolder)o).name);
-        }
-
-        @Override
-        public int hashCode()
-        {
-            return name.hashCode();
-        }
-
-        public int compareTo(FolderInfoHolder o)
-        {
-            String s1 = this.name;
-            String s2 = o.name;
-
-            int ret = s1.compareToIgnoreCase(s2);
-            if (ret != 0)
-            {
-                return ret;
-            }
-            else
-            {
-                return s1.compareTo(s2);
-            }
-
-        }
-
-        // constructor for an empty object for comparisons
-        public FolderInfoHolder()
-        {
-        }
-
-        public FolderInfoHolder(Folder folder, int unreadCount)
-        {
-            populate(folder, unreadCount);
-        }
-        public void populate(Folder folder, int unreadCount)
-        {
-
-            try
-            {
-                folder.open(Folder.OpenMode.READ_WRITE);
-                //  unreadCount = folder.getUnreadMessageCount();
-            }
-            catch (MessagingException me)
-            {
-                Log.e(K9.LOG_TAG, "Folder.getUnreadMessageCount() failed", me);
-            }
-
-            this.name = folder.getName();
-
-            if (this.name.equalsIgnoreCase(K9.INBOX))
-            {
-                this.displayName = getString(R.string.special_mailbox_name_inbox);
-            }
-            else
-            {
-                this.displayName = folder.getName();
-            }
-
-            if (this.name.equals(mAccount.getOutboxFolderName()))
-            {
-                this.displayName = String.format(getString(R.string.special_mailbox_name_outbox_fmt), this.name);
-                this.outbox = true;
-            }
-
-            if (this.name.equals(mAccount.getDraftsFolderName()))
-            {
-                this.displayName = String.format(getString(R.string.special_mailbox_name_drafts_fmt), this.name);
-            }
-
-            if (this.name.equals(mAccount.getTrashFolderName()))
-            {
-                this.displayName = String.format(getString(R.string.special_mailbox_name_trash_fmt), this.name);
-            }
-
-            if (this.name.equals(mAccount.getSentFolderName()))
-            {
-                this.displayName = String.format(getString(R.string.special_mailbox_name_sent_fmt), this.name);
-            }
-
-            if (this.name.equals(mAccount.getArchiveFolderName()))
-            {
-                this.displayName = String.format(getString(R.string.special_mailbox_name_archive_fmt), this.name);
-            }
-
-            if (this.name.equals(mAccount.getSpamFolderName()))
-            {
-                this.displayName = String.format(getString(R.string.special_mailbox_name_spam_fmt), this.name);
-            }
-
-            this.lastChecked = folder.getLastUpdate();
-
-            String mess = truncateStatus(folder.getStatus());
-
-            this.status = mess;
-
-            this.unreadMessageCount = unreadCount;
-
-            try
-            {
-                this.flaggedMessageCount = folder.getFlaggedMessageCount();
-            }
-            catch (Exception e)
-            {
-                Log.e(K9.LOG_TAG, "Unable to get flaggedMessageCount", e);
-            }
-
-            folder.close();
-
-        }
-    }
-
-    class FolderViewHolder
+    static class FolderViewHolder
     {
         public TextView folderName;
 
@@ -1613,19 +1528,19 @@ public class FolderList extends K9ListActivity
 
         SearchSpecification searchSpec = new SearchSpecification()
         {
-            @Override
+            //interface has no override            @Override
             public String[] getAccountUuids()
             {
                 return new String[] { account.getUuid() };
             }
 
-            @Override
+            //interface has no override            @Override
             public Flag[] getForbiddenFlags()
             {
                 return UNREAD_FLAG_ARRAY;
             }
 
-            @Override
+            //interface has no override            @Override
             public String getQuery()
             {
                 return "";

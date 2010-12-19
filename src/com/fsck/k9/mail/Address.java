@@ -1,10 +1,16 @@
 
 package com.fsck.k9.mail;
 
+import android.text.Spannable;
+import android.text.SpannableString;
+import android.text.SpannableStringBuilder;
+import android.text.style.ForegroundColorSpan;
 import android.text.util.Rfc822Token;
 import android.text.util.Rfc822Tokenizer;
 import android.util.Log;
+
 import com.fsck.k9.K9;
+import com.fsck.k9.helper.Contacts;
 import com.fsck.k9.helper.Utility;
 import org.apache.james.mime4j.codec.EncoderUtil;
 import org.apache.james.mime4j.field.address.AddressList;
@@ -18,6 +24,18 @@ import java.util.List;
 
 public class Address
 {
+    /**
+     * If the number of addresses exceeds this value the addresses aren't
+     * resolved to the names of Android contacts.
+     *
+     * <p>
+     * TODO: This number was chosen arbitrarily and should be determined by
+     * performance tests.
+     * </p>
+     *
+     * @see Address#toFriendly(Address[], Contacts)
+     */
+    private static final int TOO_MANY_ADDRESSES = 50;
 
     /**
      * Immutable empty {@link Address} array
@@ -230,34 +248,81 @@ public class Address
      * is not available.
      * @return
      */
-    public String toFriendly()
+    public CharSequence toFriendly()
     {
-        if (mPersonal != null && mPersonal.length() > 0)
-        {
-            return  mPersonal;
-        }
-        else
-        {
-            return mAddress;
-        }
+        return toFriendly((Contacts)null);
     }
 
-    public static String toFriendly(Address[] addresses)
+    /**
+     * Returns the name of the contact this email address belongs to if
+     * the {@link Contacts contacts} parameter is not {@code null} and a
+     * contact is found. Otherwise the personal portion of the {@link Address}
+     * is returned. If that isn't available either, the email address is
+     * returned.
+     *
+     * @param contacts
+     *         A {@link Contacts} instance or {@code null}.
+     * @return
+     *         A "friendly" name for this {@link Address}.
+     */
+    public CharSequence toFriendly(final Contacts contacts)
+    {
+        if (contacts != null)
+        {
+            final String name = contacts.getNameForAddress(mAddress);
+
+            // TODO: The results should probably be cached for performance reasons.
+
+            if (name != null)
+            {
+                if (K9.changeContactNameColor())
+                {
+                    final SpannableString coloredName = new SpannableString(name);
+                    coloredName.setSpan(new ForegroundColorSpan(K9.getContactNameColor()),
+                                        0,
+                                        coloredName.length(),
+                                        Spannable.SPAN_EXCLUSIVE_EXCLUSIVE
+                                       );
+                    return coloredName;
+                }
+                else
+                {
+                    return name;
+                }
+            }
+        }
+
+        return ((mPersonal != null) && (mPersonal.length() > 0)) ? mPersonal : mAddress;
+    }
+
+    public static CharSequence toFriendly(Address[] addresses)
+    {
+        return toFriendly(addresses, null);
+    }
+
+    public static CharSequence toFriendly(Address[] addresses, Contacts contacts)
     {
         if (addresses == null)
         {
             return null;
         }
-        StringBuffer sb = new StringBuffer();
+
+        if (addresses.length >= TOO_MANY_ADDRESSES)
+        {
+            // Don't look up contacts if the number of addresses is very high.
+            contacts = null;
+        }
+
+        SpannableStringBuilder sb = new SpannableStringBuilder();
         for (int i = 0; i < addresses.length; i++)
         {
-            sb.append(addresses[i].toFriendly());
+            sb.append(addresses[i].toFriendly(contacts));
             if (i < addresses.length - 1)
             {
                 sb.append(',');
             }
         }
-        return sb.toString();
+        return sb;
     }
 
     /**
@@ -298,7 +363,7 @@ public class Address
             addresses.add(new Address(address, personal));
             pairStartIndex = pairEndIndex + 2;
         }
-        return addresses.toArray(new Address[] { });
+        return addresses.toArray(new Address[addresses.size()]);
     }
 
     /**
@@ -315,7 +380,7 @@ public class Address
         {
             return null;
         }
-        StringBuffer sb = new StringBuffer();
+        StringBuilder sb = new StringBuilder();
         for (int i = 0, count = addresses.length; i < count; i++)
         {
             Address address = addresses[i];

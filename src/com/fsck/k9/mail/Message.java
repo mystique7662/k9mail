@@ -4,6 +4,7 @@ package com.fsck.k9.mail;
 import java.util.Date;
 import java.util.HashSet;
 import java.util.Set;
+import com.fsck.k9.mail.store.UnavailableStorageException;
 
 public abstract class Message implements Part, Body
 {
@@ -42,7 +43,7 @@ public abstract class Message implements Part, Body
     @Override
     public boolean equals(Object o)
     {
-        if (o == null || o instanceof Message == false)
+        if (o == null || !(o instanceof Message))
         {
             return false;
         }
@@ -79,7 +80,7 @@ public abstract class Message implements Part, Body
         return mFolder;
     }
 
-    public abstract String getSubject() throws MessagingException;
+    public abstract String getSubject();
 
     public abstract void setSubject(String subject) throws MessagingException;
 
@@ -110,11 +111,11 @@ public abstract class Message implements Part, Body
                       });
     }
 
-    public abstract Address[] getFrom() throws MessagingException;
+    public abstract Address[] getFrom();
 
     public abstract void setFrom(Address from) throws MessagingException;
 
-    public abstract Address[] getReplyTo() throws MessagingException;
+    public abstract Address[] getReplyTo();
 
     public abstract void setReplyTo(Address[] from) throws MessagingException;
 
@@ -126,7 +127,7 @@ public abstract class Message implements Part, Body
 
     public abstract void setReferences(String references) throws MessagingException;
 
-    public abstract Body getBody() throws MessagingException;
+    public abstract Body getBody();
 
     public abstract String getContentType() throws MessagingException;
 
@@ -136,7 +137,7 @@ public abstract class Message implements Part, Body
 
     public abstract String[] getHeader(String name) throws MessagingException;
 
-    public abstract Set<String> getHeaderNames();
+    public abstract Set<String> getHeaderNames() throws UnavailableStorageException;
 
     public abstract void removeHeader(String name) throws MessagingException;
 
@@ -147,7 +148,7 @@ public abstract class Message implements Part, Body
         return getContentType().startsWith(mimeType);
     }
 
-    public void delete(String trashFolderName) throws MessagingException {} ;
+    public void delete(String trashFolderName) throws MessagingException {}
 
     /*
      * TODO Refactor Flags at some point to be able to store user defined flags.
@@ -157,6 +158,14 @@ public abstract class Message implements Part, Body
         return mFlags.toArray(EMPTY_FLAG_ARRAY);
     }
 
+    /**
+     * @param flag
+     *            Flag to set. Never <code>null</code>.
+     * @param set
+     *            If <code>true</code>, the flag is added. If <code>false</code>
+     *            , the flag is removed.
+     * @throws MessagingException
+     */
     public void setFlag(Flag flag, boolean set) throws MessagingException
     {
         if (set)
@@ -187,9 +196,12 @@ public abstract class Message implements Part, Body
         return mFlags.contains(flag);
     }
 
+
+    public void destroy() throws MessagingException {}
+
     public abstract void saveChanges() throws MessagingException;
 
-    public abstract void setEncoding(String encoding);
+    public abstract void setEncoding(String encoding) throws UnavailableStorageException;
 
     public java.io.Serializable makeMessageReference() { return null; }
 }

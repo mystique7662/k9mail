@@ -5,6 +5,7 @@ import android.content.Context;
 import android.content.Intent;
 import android.content.SharedPreferences;
 import android.os.Bundle;
+import android.os.Vibrator;
 import android.preference.CheckBoxPreference;
 import android.preference.EditTextPreference;
 import android.preference.ListPreference;
@@ -13,11 +14,17 @@ import android.preference.RingtonePreference;
 import android.util.Log;
 import android.view.KeyEvent;
 
+import java.util.Map;
+import java.util.LinkedList;
+import java.util.List;
+
 import com.fsck.k9.Account;
 import com.fsck.k9.Account.FolderMode;
 import com.fsck.k9.K9;
+import com.fsck.k9.NotificationSetting;
 import com.fsck.k9.Preferences;
 import com.fsck.k9.R;
+import com.fsck.k9.mail.Folder;
 import com.fsck.k9.activity.ChooseFolder;
 import com.fsck.k9.activity.ChooseIdentity;
 import com.fsck.k9.activity.ColorPickerDialog;
@@ -27,6 +34,12 @@ import com.fsck.k9.crypto.Apg;
 import com.fsck.k9.mail.Store;
 import com.fsck.k9.service.MailService;
 
+import com.fsck.k9.mail.store.LocalStore;
+import com.fsck.k9.mail.store.StorageManager;
+import com.fsck.k9.mail.store.LocalStore.LocalFolder;
+import com.fsck.k9.mail.store.StorageManager.StorageProvider;
+
+
 public class AccountSettings extends K9PreferenceActivity
 {
     private static final String EXTRA_ACCOUNT = "account";
@@ -35,7 +48,6 @@ public class AccountSettings extends K9PreferenceActivity
 
     private static final int ACTIVITY_MANAGE_IDENTITIES = 2;
 
-    private static final String PREFERENCE_TOP_CATERGORY = "account_settings";
     private static final String PREFERENCE_DESCRIPTION = "account_description";
     private static final String PREFERENCE_COMPOSITION = "composition";
     private static final String PREFERENCE_MANAGE_IDENTITIES = "manage_identities";
@@ -53,11 +65,15 @@ public class AccountSettings extends K9PreferenceActivity
     private static final String PREFERENCE_VIBRATE_PATTERN = "account_vibrate_pattern";
     private static final String PREFERENCE_VIBRATE_TIMES = "account_vibrate_times";
     private static final String PREFERENCE_RINGTONE = "account_ringtone";
+    private static final String PREFERENCE_NOTIFICATION_LED = "account_led";
     private static final String PREFERENCE_INCOMING = "incoming";
     private static final String PREFERENCE_OUTGOING = "outgoing";
     private static final String PREFERENCE_DISPLAY_MODE = "folder_display_mode";
     private static final String PREFERENCE_SYNC_MODE = "folder_sync_mode";
     private static final String PREFERENCE_PUSH_MODE = "folder_push_mode";
+    private static final String PREFERENCE_PUSH_POLL_ON_CONNECT = "push_poll_on_connect";
+    private static final String PREFERENCE_MAX_PUSH_FOLDERS = "max_push_folders";
+    private static final String PREFERENCE_IDLE_REFRESH_PERIOD = "idle_refresh_period";
     private static final String PREFERENCE_TARGET_MODE = "folder_target_mode";
     private static final String PREFERENCE_DELETE_POLICY = "delete_policy";
     private static final String PREFERENCE_EXPUNGE_POLICY = "expunge_policy";
@@ -68,12 +84,28 @@ public class AccountSettings extends K9PreferenceActivity
     private static final String PREFERENCE_NOTIFICATION_OPENS_UNREAD = "notification_opens_unread";
     private static final String PREFERENCE_MESSAGE_AGE = "account_message_age";
     private static final String PREFERENCE_MESSAGE_SIZE = "account_autodownload_size";
+    private static final String PREFERENCE_SAVE_ALL_HEADERS = "account_save_all_headers";
     private static final String PREFERENCE_QUOTE_PREFIX = "account_quote_prefix";
+    private static final String PREFERENCE_REPLY_AFTER_QUOTE = "reply_after_quote";
     private static final String PREFERENCE_SYNC_REMOTE_DELETIONS = "account_sync_remote_deletetions";
     private static final String PREFERENCE_CRYPTO_APP = "crypto_app";
     private static final String PREFERENCE_CRYPTO_AUTO_SIGNATURE = "crypto_auto_signature";
 
+    private static final String PREFERENCE_LOCAL_STORAGE_PROVIDER = "local_storage_provider";
+
+
+    private static final String PREFERENCE_ARCHIVE_FOLDER = "archive_folder";
+    private static final String PREFERENCE_DRAFTS_FOLDER = "drafts_folder";
+    private static final String PREFERENCE_OUTBOX_FOLDER = "outbox_folder";
+    private static final String PREFERENCE_SENT_FOLDER = "sent_folder";
+    private static final String PREFERENCE_SPAM_FOLDER = "spam_folder";
+    private static final String PREFERENCE_TRASH_FOLDER = "trash_folder";
+
+
+
     private Account mAccount;
+    private boolean mIsPushCapable = false;
+    private boolean mIsExpungeCapable = false;
 
     private EditTextPreference mAccountDescription;
     private ListPreference mCheckFrequency;
@@ -89,8 +121,9 @@ public class AccountSettings extends K9PreferenceActivity
     private CheckBoxPreference mAccountEnableMoveButtons;
     private CheckBoxPreference mAccountNotifySync;
     private CheckBoxPreference mAccountVibrate;
+    private CheckBoxPreference mAccountLed;
     private ListPreference mAccountVibratePattern;
-    private EditTextPreference mAccountVibrateTimes;
+    private ListPreference mAccountVibrateTimes;
     private RingtonePreference mAccountRingtone;
     private ListPreference mDisplayMode;
     private ListPreference mSyncMode;
@@ -99,15 +132,31 @@ public class AccountSettings extends K9PreferenceActivity
     private ListPreference mDeletePolicy;
     private ListPreference mExpungePolicy;
     private ListPreference mSearchableFolders;
-    private Preference mAutoExpandFolder;
+    private ListPreference mAutoExpandFolder;
     private Preference mChipColor;
     private Preference mLedColor;
     private boolean mIncomingChanged = false;
     private CheckBoxPreference mNotificationOpensUnread;
     private EditTextPreference mAccountQuotePrefix;
+    private CheckBoxPreference mReplyAfterQuote;
     private CheckBoxPreference mSyncRemoteDeletions;
+    private CheckBoxPreference mSaveAllHeaders;
+    private CheckBoxPreference mPushPollOnConnect;
+    private ListPreference mIdleRefreshPeriod;
+    private ListPreference mMaxPushFolders;
     private ListPreference mCryptoApp;
     private CheckBoxPreference mCryptoAutoSignature;
+
+    private ListPreference mLocalStorageProvider;
+
+
+    private ListPreference mArchiveFolder;
+    private ListPreference mDraftsFolder;
+    private ListPreference mOutboxFolder;
+    private ListPreference mSentFolder;
+    private ListPreference mSpamFolder;
+    private ListPreference mTrashFolder;
+
 
     public static void actionSettings(Context context, Account account)
     {
@@ -124,13 +173,11 @@ public class AccountSettings extends K9PreferenceActivity
         String accountUuid = getIntent().getStringExtra(EXTRA_ACCOUNT);
         mAccount = Preferences.getPreferences(this).getAccount(accountUuid);
 
-        boolean isPushCapable = false;
-        boolean isExpungeCapable = false;
         try
         {
             final Store store = mAccount.getRemoteStore();
-            isPushCapable = store.isPushCapable();
-            isExpungeCapable = store.isExpungeCapable();
+            mIsPushCapable = store.isPushCapable();
+            mIsExpungeCapable = store.isExpungeCapable();
         }
         catch (Exception e)
         {
@@ -138,9 +185,6 @@ public class AccountSettings extends K9PreferenceActivity
         }
 
         addPreferencesFromResource(R.xml.account_settings_preferences);
-
-        Preference category = findPreference(PREFERENCE_TOP_CATERGORY);
-        category.setTitle(getString(R.string.account_settings_title_fmt));
 
         mAccountDescription = (EditTextPreference) findPreference(PREFERENCE_DESCRIPTION);
         mAccountDescription.setSummary(mAccount.getDescription());
@@ -170,6 +214,9 @@ public class AccountSettings extends K9PreferenceActivity
                 return false;
             }
         });
+
+        mReplyAfterQuote = (CheckBoxPreference) findPreference(PREFERENCE_REPLY_AFTER_QUOTE);
+        mReplyAfterQuote.setChecked(mAccount.isReplyAfterQuote());
 
         mCheckFrequency = (ListPreference) findPreference(PREFERENCE_FREQUENCY);
         mCheckFrequency.setValue(String.valueOf(mAccount.getAutomaticCheckIntervalMinutes()));
@@ -217,7 +264,7 @@ public class AccountSettings extends K9PreferenceActivity
         });
 
         mPushMode = (ListPreference) findPreference(PREFERENCE_PUSH_MODE);
-        mPushMode.setEnabled(isPushCapable);
+        mPushMode.setEnabled(mIsPushCapable);
         mPushMode.setValue(mAccount.getFolderPushMode().name());
         mPushMode.setSummary(mPushMode.getEntry());
         mPushMode.setOnPreferenceChangeListener(new Preference.OnPreferenceChangeListener()
@@ -262,9 +309,8 @@ public class AccountSettings extends K9PreferenceActivity
             }
         });
 
-
         mExpungePolicy = (ListPreference) findPreference(PREFERENCE_EXPUNGE_POLICY);
-        mExpungePolicy.setEnabled(isExpungeCapable);
+        mExpungePolicy.setEnabled(mIsExpungeCapable);
         mExpungePolicy.setValue(mAccount.getExpungePolicy());
         mExpungePolicy.setSummary(mExpungePolicy.getEntry());
         mExpungePolicy.setOnPreferenceChangeListener(new Preference.OnPreferenceChangeListener()
@@ -281,6 +327,9 @@ public class AccountSettings extends K9PreferenceActivity
 
         mSyncRemoteDeletions = (CheckBoxPreference) findPreference(PREFERENCE_SYNC_REMOTE_DELETIONS);
         mSyncRemoteDeletions.setChecked(mAccount.syncRemoteDeletions());
+
+        mSaveAllHeaders = (CheckBoxPreference) findPreference(PREFERENCE_SAVE_ALL_HEADERS);
+        mSaveAllHeaders.setChecked(mAccount.saveAllHeaders());
 
         mSearchableFolders = (ListPreference) findPreference(PREFERENCE_SEARCHABLE_FOLDERS);
         mSearchableFolders.setValue(mAccount.getSearchableFolders().name());
@@ -327,8 +376,6 @@ public class AccountSettings extends K9PreferenceActivity
             }
         });
 
-
-
         mMessageSize = (ListPreference) findPreference(PREFERENCE_MESSAGE_SIZE);
         mMessageSize.setValue(String.valueOf(mAccount.getMaximumAutoDownloadMessageSize()));
         mMessageSize.setSummary(mMessageSize.getEntry());
@@ -344,12 +391,9 @@ public class AccountSettings extends K9PreferenceActivity
             }
         });
 
-
-
         mAccountDefault = (CheckBoxPreference) findPreference(PREFERENCE_DEFAULT);
         mAccountDefault.setChecked(
             mAccount.equals(Preferences.getPreferences(this).getDefaultAccount()));
-
 
         mAccountHideButtons = (ListPreference) findPreference(PREFERENCE_HIDE_BUTTONS);
         mAccountHideButtons.setValue("" + mAccount.getHideMessageViewButtons());
@@ -399,6 +443,78 @@ public class AccountSettings extends K9PreferenceActivity
             }
         });
 
+
+        mLocalStorageProvider = (ListPreference) findPreference(PREFERENCE_LOCAL_STORAGE_PROVIDER);
+        {
+            final Map<String, String> providers;
+            providers = StorageManager.getInstance(K9.app).getAvailableProviders();
+            int i = 0;
+            final String[] providerLabels = new String[providers.size()];
+            final String[] providerIds = new String[providers.size()];
+            for (final Map.Entry<String, String> entry : providers.entrySet())
+            {
+                providerIds[i] = entry.getKey();
+                providerLabels[i] = entry.getValue();
+                i++;
+            }
+            mLocalStorageProvider.setEntryValues(providerIds);
+            mLocalStorageProvider.setEntries(providerLabels);
+            mLocalStorageProvider.setValue(mAccount.getLocalStorageProviderId());
+            mLocalStorageProvider.setSummary(providers.get((Object)mAccount.getLocalStorageProviderId()));
+
+            mLocalStorageProvider.setOnPreferenceChangeListener(new Preference.OnPreferenceChangeListener()
+            {
+                public boolean onPreferenceChange(Preference preference, Object newValue)
+                {
+                    mLocalStorageProvider.setSummary(providers.get(newValue));
+                    return true;
+                }
+            });
+        }
+        // IMAP-specific preferences
+
+        mPushPollOnConnect = (CheckBoxPreference) findPreference(PREFERENCE_PUSH_POLL_ON_CONNECT);
+        mIdleRefreshPeriod = (ListPreference) findPreference(PREFERENCE_IDLE_REFRESH_PERIOD);
+        mMaxPushFolders = (ListPreference) findPreference(PREFERENCE_MAX_PUSH_FOLDERS);
+        if (mIsPushCapable)
+        {
+            mPushPollOnConnect.setChecked(mAccount.isPushPollOnConnect());
+
+            mIdleRefreshPeriod.setValue(String.valueOf(mAccount.getIdleRefreshMinutes()));
+            mIdleRefreshPeriod.setSummary(mIdleRefreshPeriod.getEntry());
+            mIdleRefreshPeriod.setOnPreferenceChangeListener(new Preference.OnPreferenceChangeListener()
+            {
+                public boolean onPreferenceChange(Preference preference, Object newValue)
+                {
+                    final String summary = newValue.toString();
+                    int index = mIdleRefreshPeriod.findIndexOfValue(summary);
+                    mIdleRefreshPeriod.setSummary(mIdleRefreshPeriod.getEntries()[index]);
+                    mIdleRefreshPeriod.setValue(summary);
+                    return false;
+                }
+            });
+
+            mMaxPushFolders.setValue(String.valueOf(mAccount.getMaxPushFolders()));
+            mMaxPushFolders.setSummary(mMaxPushFolders.getEntry());
+            mMaxPushFolders.setOnPreferenceChangeListener(new Preference.OnPreferenceChangeListener()
+            {
+                public boolean onPreferenceChange(Preference preference, Object newValue)
+                {
+                    final String summary = newValue.toString();
+                    int index = mMaxPushFolders.findIndexOfValue(summary);
+                    mMaxPushFolders.setSummary(mMaxPushFolders.getEntries()[index]);
+                    mMaxPushFolders.setValue(summary);
+                    return false;
+                }
+            });
+        }
+        else
+        {
+            mPushPollOnConnect.setEnabled(false);
+            mMaxPushFolders.setEnabled(false);
+            mIdleRefreshPeriod.setEnabled(false);
+        }
+
         mAccountNotify = (CheckBoxPreference) findPreference(PREFERENCE_NOTIFY);
         mAccountNotify.setChecked(mAccount.isNotifyNewMail());
 
@@ -413,14 +529,14 @@ public class AccountSettings extends K9PreferenceActivity
         // XXX: The following two lines act as a workaround for the RingtonePreference
         //      which does not let us set/get the value programmatically
         SharedPreferences prefs = mAccountRingtone.getPreferenceManager().getSharedPreferences();
-        String currentRingtone = (!mAccount.shouldRing() ? null : mAccount.getRingtone());
+        String currentRingtone = (!mAccount.getNotificationSetting().shouldRing() ? null : mAccount.getNotificationSetting().getRingtone());
         prefs.edit().putString(PREFERENCE_RINGTONE, currentRingtone).commit();
 
         mAccountVibrate = (CheckBoxPreference) findPreference(PREFERENCE_VIBRATE);
-        mAccountVibrate.setChecked(mAccount.isVibrate());
+        mAccountVibrate.setChecked(mAccount.getNotificationSetting().shouldVibrate());
 
         mAccountVibratePattern = (ListPreference) findPreference(PREFERENCE_VIBRATE_PATTERN);
-        mAccountVibratePattern.setValue(String.valueOf(mAccount.getVibratePattern()));
+        mAccountVibratePattern.setValue(String.valueOf(mAccount.getNotificationSetting().getVibratePattern()));
         mAccountVibratePattern.setSummary(mAccountVibratePattern.getEntry());
         mAccountVibratePattern.setOnPreferenceChangeListener(new Preference.OnPreferenceChangeListener()
         {
@@ -430,13 +546,14 @@ public class AccountSettings extends K9PreferenceActivity
                 int index = mAccountVibratePattern.findIndexOfValue(summary);
                 mAccountVibratePattern.setSummary(mAccountVibratePattern.getEntries()[index]);
                 mAccountVibratePattern.setValue(summary);
+                doVibrateTest(preference);
                 return false;
             }
         });
 
-        mAccountVibrateTimes = (EditTextPreference) findPreference(PREFERENCE_VIBRATE_TIMES);
-        mAccountVibrateTimes.setSummary(String.valueOf(mAccount.getVibrateTimes()));
-        mAccountVibrateTimes.setText(String.valueOf(mAccount.getVibrateTimes()));
+        mAccountVibrateTimes = (ListPreference) findPreference(PREFERENCE_VIBRATE_TIMES);
+        mAccountVibrateTimes.setValue(String.valueOf(mAccount.getNotificationSetting().getVibrateTimes()));
+        mAccountVibrateTimes.setSummary(String.valueOf(mAccount.getNotificationSetting().getVibrateTimes()));
         mAccountVibrateTimes.setOnPreferenceChangeListener(new Preference.OnPreferenceChangeListener()
         {
             @Override
@@ -444,58 +561,89 @@ public class AccountSettings extends K9PreferenceActivity
             {
                 final String value = newValue.toString();
                 mAccountVibrateTimes.setSummary(value);
-                mAccountVibrateTimes.setText(value);
+                mAccountVibrateTimes.setValue(value);
+                doVibrateTest(preference);
                 return false;
             }
         });
+
+        mAccountLed = (CheckBoxPreference) findPreference(PREFERENCE_NOTIFICATION_LED);
+        mAccountLed.setChecked(mAccount.getNotificationSetting().isLed());
 
         mNotificationOpensUnread = (CheckBoxPreference)findPreference(PREFERENCE_NOTIFICATION_OPENS_UNREAD);
         mNotificationOpensUnread.setChecked(mAccount.goToUnreadMessageSearch());
 
 
-        mAutoExpandFolder = (Preference)findPreference(PREFERENCE_AUTO_EXPAND_FOLDER);
 
-        mAutoExpandFolder.setSummary(translateFolder(mAccount.getAutoExpandFolderName()));
-
-        mAutoExpandFolder.setOnPreferenceClickListener(
-            new Preference.OnPreferenceClickListener()
+        List<? extends Folder> folders = new LinkedList<LocalFolder>();
+        try
         {
-            public boolean onPreferenceClick(Preference preference)
-            {
-                onChooseAutoExpandFolder();
-                return false;
-            }
+            folders = mAccount.getLocalStore().getPersonalNamespaces(false);
         }
-        );
+        catch (Exception e)
+        {
+            /// this can't be checked in
+        }
+        final String[] allFolderValues = new String[folders.size()+2];
+        final String[] allFolderLabels = new String[folders.size()+2];
+        allFolderValues[0] = K9.FOLDER_NONE;
+        allFolderLabels[0] = K9.FOLDER_NONE;
+
+        // There's a non-zero chance that "outbox" won't actually exist, so we force it into the list
+        allFolderValues[1] = mAccount.getOutboxFolderName();
+        allFolderLabels[1] = mAccount.getOutboxFolderName();
 
 
-        mChipColor = (Preference)findPreference(PREFERENCE_CHIP_COLOR);
+        int i =2;
+        for (Folder folder : folders)
+        {
+            allFolderLabels[i] = folder.getName();
+            allFolderValues[i] = folder.getName();
+            i++;
+        }
 
-        mChipColor.setOnPreferenceClickListener(
-            new Preference.OnPreferenceClickListener()
+        mAutoExpandFolder = (ListPreference)findPreference(PREFERENCE_AUTO_EXPAND_FOLDER);
+        initListPreference(mAutoExpandFolder, mAccount.getAutoExpandFolderName(), allFolderLabels,allFolderValues);
+
+        mArchiveFolder = (ListPreference)findPreference(PREFERENCE_ARCHIVE_FOLDER);
+        initListPreference(mArchiveFolder, mAccount.getArchiveFolderName(), allFolderLabels,allFolderValues);
+
+        mDraftsFolder = (ListPreference)findPreference(PREFERENCE_DRAFTS_FOLDER);
+        initListPreference(mDraftsFolder, mAccount.getDraftsFolderName(), allFolderLabels,allFolderValues);
+
+        mOutboxFolder = (ListPreference)findPreference(PREFERENCE_OUTBOX_FOLDER);
+        initListPreference(mOutboxFolder, mAccount.getOutboxFolderName(), allFolderLabels,allFolderValues);
+
+        mSentFolder = (ListPreference)findPreference(PREFERENCE_SENT_FOLDER);
+        initListPreference(mSentFolder, mAccount.getSentFolderName(), allFolderLabels,allFolderValues);
+
+        mSpamFolder = (ListPreference)findPreference(PREFERENCE_SPAM_FOLDER);
+        initListPreference(mSpamFolder, mAccount.getSpamFolderName(), allFolderLabels,allFolderValues);
+
+        mTrashFolder = (ListPreference)findPreference(PREFERENCE_TRASH_FOLDER);
+        initListPreference(mTrashFolder, mAccount.getTrashFolderName(), allFolderLabels,allFolderValues);
+
+
+
+        mChipColor = findPreference(PREFERENCE_CHIP_COLOR);
+        mChipColor.setOnPreferenceClickListener(new Preference.OnPreferenceClickListener()
         {
             public boolean onPreferenceClick(Preference preference)
             {
                 onChooseChipColor();
                 return false;
             }
-        }
-        );
+        });
 
-        mLedColor = (Preference)findPreference(PREFERENCE_LED_COLOR);
-
-        mLedColor.setOnPreferenceClickListener(
-            new Preference.OnPreferenceClickListener()
+        mLedColor = findPreference(PREFERENCE_LED_COLOR);
+        mLedColor.setOnPreferenceClickListener(new Preference.OnPreferenceClickListener()
         {
             public boolean onPreferenceClick(Preference preference)
             {
                 onChooseLedColor();
                 return false;
             }
-        }
-        );
-
-
+        });
 
         findPreference(PREFERENCE_COMPOSITION).setOnPreferenceClickListener(
             new Preference.OnPreferenceClickListener()
@@ -590,7 +738,6 @@ public class AccountSettings extends K9PreferenceActivity
     public void onResume()
     {
         super.onResume();
-        //mAccount.refresh(Preferences.getPreferences(this));
     }
 
     private void saveSettings()
@@ -607,18 +754,38 @@ public class AccountSettings extends K9PreferenceActivity
         mAccount.setDisplayCount(Integer.parseInt(mDisplayCount.getValue()));
         mAccount.setMaximumPolledMessageAge(Integer.parseInt(mMessageAge.getValue()));
         mAccount.setMaximumAutoDownloadMessageSize(Integer.parseInt(mMessageSize.getValue()));
-        mAccount.setVibrate(mAccountVibrate.isChecked());
-        mAccount.setVibratePattern(Integer.parseInt(mAccountVibratePattern.getValue()));
-        mAccount.setVibrateTimes(Integer.parseInt(mAccountVibrateTimes.getText()));
+        mAccount.getNotificationSetting().setVibrate(mAccountVibrate.isChecked());
+        mAccount.getNotificationSetting().setVibratePattern(Integer.parseInt(mAccountVibratePattern.getValue()));
+        mAccount.getNotificationSetting().setVibrateTimes(Integer.parseInt(mAccountVibrateTimes.getValue()));
+        mAccount.getNotificationSetting().setLed(mAccountLed.isChecked());
         mAccount.setGoToUnreadMessageSearch(mNotificationOpensUnread.isChecked());
         mAccount.setFolderTargetMode(Account.FolderMode.valueOf(mTargetMode.getValue()));
         mAccount.setDeletePolicy(Integer.parseInt(mDeletePolicy.getValue()));
         mAccount.setExpungePolicy(mExpungePolicy.getValue());
         mAccount.setSyncRemoteDeletions(mSyncRemoteDeletions.isChecked());
+        mAccount.setSaveAllHeaders(mSaveAllHeaders.isChecked());
         mAccount.setSearchableFolders(Account.Searchable.valueOf(mSearchableFolders.getValue()));
         mAccount.setQuotePrefix(mAccountQuotePrefix.getText());
+        mAccount.setReplyAfterQuote(mReplyAfterQuote.isChecked());
         mAccount.setCryptoApp(mCryptoApp.getValue());
         mAccount.setCryptoAutoSignature(mCryptoAutoSignature.isChecked());
+        mAccount.setLocalStorageProviderId(mLocalStorageProvider.getValue());
+
+        mAccount.setAutoExpandFolderName(reverseTranslateFolder(mAutoExpandFolder.getValue()));
+        mAccount.setArchiveFolderName(mArchiveFolder.getValue());
+        mAccount.setDraftsFolderName(mDraftsFolder.getValue());
+        mAccount.setOutboxFolderName(mOutboxFolder.getValue());
+        mAccount.setSentFolderName(mSentFolder.getValue());
+        mAccount.setSpamFolderName(mSpamFolder.getValue());
+        mAccount.setTrashFolderName(mTrashFolder.getValue());
+
+
+        if (mIsPushCapable)
+        {
+            mAccount.setPushPollOnConnect(mPushPollOnConnect.isChecked());
+            mAccount.setIdleRefreshMinutes(Integer.parseInt(mIdleRefreshPeriod.getValue()));
+            mAccount.setMaxPushFolders(Integer.parseInt(mMaxPushFolders.getValue()));
+        }
 
         boolean needsRefresh = mAccount.setAutomaticCheckIntervalMinutes(Integer.parseInt(mCheckFrequency.getValue()));
         needsRefresh |= mAccount.setFolderSyncMode(Account.FolderMode.valueOf(mSyncMode.getValue()));
@@ -636,14 +803,14 @@ public class AccountSettings extends K9PreferenceActivity
         String newRingtone = prefs.getString(PREFERENCE_RINGTONE, null);
         if (newRingtone != null)
         {
-            mAccount.setRing(true);
-            mAccount.setRingtone(newRingtone);
+            mAccount.getNotificationSetting().setRing(true);
+            mAccount.getNotificationSetting().setRingtone(newRingtone);
         }
         else
         {
-            if (mAccount.shouldRing())
+            if (mAccount.getNotificationSetting().shouldRing())
             {
-                mAccount.setRingtone(null);
+                mAccount.getNotificationSetting().setRingtone(null);
             }
         }
 
@@ -651,8 +818,8 @@ public class AccountSettings extends K9PreferenceActivity
         mAccount.setHideMessageViewMoveButtons(Account.HideButtons.valueOf(mAccountHideMoveButtons.getValue()));
         mAccount.setShowPictures(Account.ShowPictures.valueOf(mAccountShowPictures.getValue()));
         mAccount.setEnableMoveButtons(mAccountEnableMoveButtons.isChecked());
-        mAccount.setAutoExpandFolderName(reverseTranslateFolder(mAutoExpandFolder.getSummary().toString()));
         mAccount.save(Preferences.getPreferences(this));
+
         if (needsRefresh && needsPushRestart)
         {
             MailService.actionReset(this, null);
@@ -733,10 +900,10 @@ public class AccountSettings extends K9PreferenceActivity
         {
             public void colorChanged(int color)
             {
-                mAccount.setLedColor(color);
+                mAccount.getNotificationSetting().setLedColor(color);
             }
         },
-        mAccount.getLedColor()).show();
+        mAccount.getNotificationSetting().getLedColor()).show();
     }
 
     public void onChooseAutoExpandFolder()
@@ -749,12 +916,10 @@ public class AccountSettings extends K9PreferenceActivity
         selectIntent.putExtra(ChooseFolder.EXTRA_SHOW_FOLDER_NONE, "yes");
         selectIntent.putExtra(ChooseFolder.EXTRA_SHOW_DISPLAYABLE_ONLY, "yes");
         startActivityForResult(selectIntent, SELECT_AUTO_EXPAND_FOLDER);
-
     }
 
     private String translateFolder(String in)
     {
-
         if (K9.INBOX.equalsIgnoreCase(in))
         {
             return getString(R.string.special_mailbox_name_inbox);
@@ -767,7 +932,6 @@ public class AccountSettings extends K9PreferenceActivity
 
     private String reverseTranslateFolder(String in)
     {
-
         if (getString(R.string.special_mailbox_name_inbox).equals(in))
         {
             return K9.INBOX;
@@ -778,4 +942,12 @@ public class AccountSettings extends K9PreferenceActivity
         }
     }
 
+    private void doVibrateTest(Preference preference)
+    {
+        // Do the vibration to show the user what it's like.
+        Vibrator vibrate = (Vibrator)preference.getContext().getSystemService(Context.VIBRATOR_SERVICE);
+        vibrate.vibrate(NotificationSetting.getVibration(
+                            Integer.parseInt(mAccountVibratePattern.getValue()),
+                            Integer.parseInt(mAccountVibrateTimes.getValue())), -1);
+    }
 }

@@ -116,43 +116,6 @@
         <LinearLayout android:layout_width="fill_parent"
             android:layout_height="wrap_content" android:id="@+id/imap_folder_setup_section"
             android:orientation="vertical">
-            <TextView android:layout_height="wrap_content"
-                android:text="@string/account_setup_incoming_imap_folder_archive"
-                android:layout_width="fill_parent"></TextView>
-            <Button android:layout_height="wrap_content"
-                android:id="@+id/account_imap_folder_archive" android:layout_width="fill_parent"></Button>
-            <TextView android:layout_height="wrap_content"
-                android:text="@string/account_setup_incoming_imap_folder_drafts"
-                android:layout_width="fill_parent"></TextView>
-            <Button android:layout_height="wrap_content"
-                android:id="@+id/account_imap_folder_drafts" android:layout_width="fill_parent"
-                android:contentDescription="@string/account_setup_incoming_imap_folder_drafts"></Button>
-            <TextView android:layout_height="wrap_content"
-                android:text="@string/account_setup_incoming_imap_folder_sent"
-                android:layout_width="fill_parent"></TextView>
-            <Button android:layout_height="wrap_content"
-                android:id="@+id/account_imap_folder_sent" android:layout_width="fill_parent"
-                android:contentDescription="@string/account_setup_incoming_imap_folder_sent"></Button>
-            <TextView android:layout_height="wrap_content"
-                android:text="@string/account_setup_incoming_imap_folder_spam"
-                android:layout_width="fill_parent"></TextView>
-            <Button android:layout_height="wrap_content"
-                android:id="@+id/account_imap_folder_spam" android:layout_width="fill_parent"></Button>
-            <TextView android:layout_height="wrap_content"
-                android:text="@string/account_setup_incoming_imap_folder_trash"
-                android:layout_width="fill_parent"></TextView>
-            <Button android:layout_height="wrap_content"
-                android:id="@+id/account_imap_folder_trash" android:layout_width="fill_parent"
-                android:contentDescription="@string/account_setup_incoming_imap_folder_trash"></Button>
-            <TextView android:layout_height="wrap_content"
-                android:text="@string/account_setup_incoming_imap_folder_outbox"
-                android:layout_width="fill_parent"></TextView>
-            <EditText
-                android:id="@+id/account_imap_folder_outbox"
-                android:singleLine="true"
-                android:layout_height="wrap_content"
-                android:layout_width="fill_parent"
-                android:contentDescription="@string/account_setup_incoming_imap_folder_outbox" />
             <CheckBox
                 android:id="@+id/subscribed_folders_only"
                 android:layout_height="wrap_content"
@@ -245,62 +208,6 @@
                 android:contentDescription="@string/account_setup_incoming_compression_label"
             />
         </LinearLayout>
-        <TextView
-            android:text="@string/account_setup_incoming_save_all_headers_title"
-            android:layout_height="wrap_content"
-            android:layout_width="fill_parent"
-            android:textAppearance="?android:attr/textAppearanceSmall"
-            android:textColor="?android:attr/textColorPrimary" />
-        <CheckBox
-            android:id="@+id/save_all_headers"
-            android:layout_height="wrap_content"
-            android:layout_width="wrap_content"
-            android:text="@string/account_setup_incoming_save_all_headers_label" />
-        <LinearLayout
-            android:id="@+id/push_poll_on_connect_section"
-            android:layout_width="fill_parent"
-            android:layout_height="wrap_content"
-            android:orientation="horizontal">
-            <TextView
-                android:text="@string/push_poll_on_connect_label"
-                android:layout_height="wrap_content"
-                android:layout_width="wrap_content"
-                android:textAppearance="?android:attr/textAppearanceMedium"
-                android:textColor="?android:attr/textColorPrimary" />
-            <CheckBox
-                android:id="@+id/push_poll_on_connect"
-                android:layout_height="wrap_content"
-                android:layout_width="wrap_content"
-                android:label="foo"
-            />
-        </LinearLayout>
-        <TextView
-                android:id="@+id/idle_refresh_period_label"
-                android:text="@string/idle_refresh_period_label"
-                android:layout_height="wrap_content"
-                android:layout_width="wrap_content"
-                android:textAppearance="?android:attr/textAppearanceMedium"
-                android:textColor="?android:attr/textColorPrimary" />
-        <Spinner
-            android:id="@+id/idle_refresh_period"
-            android:layout_height="wrap_content"
-            android:layout_width="fill_parent"
-            android:contentDescription="@string/idle_refresh_period_label"
-            />
-        <TextView
-                android:id="@+id/account_setup_push_limit_label"
-                android:text="@string/account_setup_push_limit_label"
-                android:layout_height="wrap_content"
-                android:layout_width="wrap_content"
-                android:textAppearance="?android:attr/textAppearanceMedium"
-                android:textColor="?android:attr/textColorPrimary" />
-        <Spinner
-            android:id="@+id/folder_push_limit"
-            android:layout_height="wrap_content"
-            android:layout_width="fill_parent"
-            android:contentDescription="@string/account_setup_push_limit_label"
-            />
-
         <View
             android:layout_width="fill_parent"
             android:layout_height="0dip"

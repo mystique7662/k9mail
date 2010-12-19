@@ -8,13 +8,17 @@ import android.net.Uri;
 import android.util.Log;
 
 import com.fsck.k9.crypto.Apg;
+import com.fsck.k9.crypto.CryptoProvider;
 import com.fsck.k9.helper.Utility;
 import com.fsck.k9.mail.Address;
 import com.fsck.k9.mail.Folder;
 import com.fsck.k9.mail.MessagingException;
 import com.fsck.k9.mail.Store;
 import com.fsck.k9.mail.store.LocalStore;
+import com.fsck.k9.mail.store.StorageManager;
 import com.fsck.k9.mail.store.LocalStore.LocalFolder;
+import com.fsck.k9.mail.store.StorageManager.StorageProvider;
+
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Calendar;
@@ -43,9 +47,11 @@ public class Account implements BaseAccount
     public static final String TYPE_WIFI = "WIFI";
     public static final String TYPE_MOBILE = "MOBILE";
     public static final String TYPE_OTHER = "OTHER";
-    private static String[] networkTypes = { TYPE_WIFI, TYPE_MOBILE, TYPE_OTHER };
+    private static final String[] networkTypes = { TYPE_WIFI, TYPE_MOBILE, TYPE_OTHER };
 
     private static final String DEFAULT_QUOTE_PREFIX = ">";
+
+    private static final boolean DEFAULT_REPLY_AFTER_QUOTE = false;
 
     /**
      * <pre>
@@ -57,16 +63,26 @@ public class Account implements BaseAccount
      */
     private int mDeletePolicy;
 
-    private String mUuid;
+    private final String mUuid;
     private String mStoreUri;
-    private String mLocalStoreUri;
+
+    /**
+     * Storage provider ID, used to locate and manage the underlying DB/file
+     * storage
+     */
+    private String mLocalStorageProviderId;
+
+    /**
+     * True if {@link #mLocalStoreUri} may be in use at
+     * the moment.
+     */
+    private final boolean mIsInUse = false;
     private String mTransportUri;
     private String mDescription;
     private String mAlwaysBcc;
     private int mAutomaticCheckIntervalMinutes;
     private int mDisplayCount;
     private int mChipColor;
-    private int mLedColor;
     private long mLastAutomaticCheckTime;
     private boolean mNotifyNewMail;
     private boolean mNotifySelfNewMail;
@@ -82,13 +98,8 @@ public class Account implements BaseAccount
     private FolderMode mFolderPushMode;
     private FolderMode mFolderTargetMode;
     private int mAccountNumber;
-    private boolean mVibrate;
-    private int mVibratePattern;
-    private int mVibrateTimes;
-    private boolean mRing;
     private boolean mSaveAllHeaders;
     private boolean mPushPollOnConnect;
-    private String mRingtoneUri;
     private boolean mNotifySync;
     private HideButtons mHideMessageViewButtons;
     private HideButtons mHideMessageViewMoveButtons;
@@ -99,7 +110,7 @@ public class Account implements BaseAccount
     private int mMaxPushFolders;
     private int mIdleRefreshMinutes;
     private boolean goToUnreadMessageSearch;
-    private Map<String, Boolean> compressionMap = new ConcurrentHashMap<String, Boolean>();
+    private final Map<String, Boolean> compressionMap = new ConcurrentHashMap<String, Boolean>();
     private Searchable searchableFolders;
     private boolean subscribedFoldersOnly;
     private int maximumPolledMessageAge;
@@ -108,9 +119,12 @@ public class Account implements BaseAccount
     // current set of fetched messages
     private boolean mRingNotified;
     private String mQuotePrefix;
+    private boolean mReplyAfterQuote;
     private boolean mSyncRemoteDeletions;
     private String mCryptoApp;
     private boolean mCryptoAutoSignature;
+
+    private CryptoProvider mCryptoProvider = null;
 
     /**
      * Name of the folder that was last selected for a copy or move operation.
@@ -122,19 +136,21 @@ public class Account implements BaseAccount
 
     private List<Identity> identities;
 
+    private NotificationSetting mNotificationSetting = new NotificationSetting();
+
     public enum FolderMode
     {
-        NONE, ALL, FIRST_CLASS, FIRST_AND_SECOND_CLASS, NOT_SECOND_CLASS;
+        NONE, ALL, FIRST_CLASS, FIRST_AND_SECOND_CLASS, NOT_SECOND_CLASS
     }
 
     public enum HideButtons
     {
-        NEVER, ALWAYS, KEYBOARD_AVAILABLE;
+        NEVER, ALWAYS, KEYBOARD_AVAILABLE
     }
 
     public enum ShowPictures
     {
-        NEVER, ALWAYS, ONLY_FROM_CONTACTS;
+        NEVER, ALWAYS, ONLY_FROM_CONTACTS
     }
 
     public enum Searchable
@@ -144,21 +160,16 @@ public class Account implements BaseAccount
 
     protected Account(Context context)
     {
-        // TODO Change local store path to something readable / recognizable
         mUuid = UUID.randomUUID().toString();
-        mLocalStoreUri = "local://localhost/" + context.getDatabasePath(mUuid + ".db");
+        mLocalStorageProviderId = StorageManager.getInstance(K9.app).getDefaultProviderId();
         mAutomaticCheckIntervalMinutes = -1;
         mIdleRefreshMinutes = 24;
-        mSaveAllHeaders = false;
+        mSaveAllHeaders = true;
         mPushPollOnConnect = true;
         mDisplayCount = K9.DEFAULT_VISIBLE_LIMIT;
         mAccountNumber = -1;
         mNotifyNewMail = true;
         mNotifySync = true;
-        mVibrate = false;
-        mVibratePattern = 0;
-        mVibrateTimes = 5;
-        mRing = true;
         mNotifySelfNewMail = true;
         mFolderDisplayMode = FolderMode.NOT_SECOND_CLASS;
         mFolderSyncMode = FolderMode.FIRST_CLASS;
@@ -168,18 +179,17 @@ public class Account implements BaseAccount
         mHideMessageViewMoveButtons = HideButtons.NEVER;
         mShowPictures = ShowPictures.NEVER;
         mEnableMoveButtons = false;
-        mRingtoneUri = "content://settings/system/notification_sound";
         mIsSignatureBeforeQuotedText = false;
         mExpungePolicy = EXPUNGE_IMMEDIATELY;
         mAutoExpandFolderName = "INBOX";
         mMaxPushFolders = 10;
         mChipColor = (new Random()).nextInt(0xffffff) + 0xff000000;
-        mLedColor = mChipColor;
         goToUnreadMessageSearch = false;
         subscribedFoldersOnly = false;
         maximumPolledMessageAge = -1;
         maximumAutoDownloadMessageSize = 32768;
         mQuotePrefix = DEFAULT_QUOTE_PREFIX;
+        mReplyAfterQuote = DEFAULT_REPLY_AFTER_QUOTE;
         mSyncRemoteDeletions = true;
         mCryptoApp = Apg.NAME;
         mCryptoAutoSignature = false;
@@ -193,6 +203,14 @@ public class Account implements BaseAccount
         //identity.setSignature(context.getString(R.string.default_signature));
         //identity.setDescription(context.getString(R.string.default_identity_description));
         identities.add(identity);
+
+        mNotificationSetting = new NotificationSetting();
+        mNotificationSetting.setVibrate(false);
+        mNotificationSetting.setVibratePattern(0);
+        mNotificationSetting.setVibrateTimes(5);
+        mNotificationSetting.setRing(true);
+        mNotificationSetting.setRingtone("content://settings/system/notification_sound");
+        mNotificationSetting.setLedColor(mChipColor);
     }
 
     protected Account(Preferences preferences, String uuid)
@@ -211,7 +229,7 @@ public class Account implements BaseAccount
 
         mStoreUri = Utility.base64Decode(prefs.getString(mUuid
                                          + ".storeUri", null));
-        mLocalStoreUri = prefs.getString(mUuid + ".localStoreUri", null);
+        mLocalStorageProviderId = prefs.getString(mUuid + ".localStorageProvider", StorageManager.getInstance(K9.app).getDefaultProviderId());
         mTransportUri = Utility.base64Decode(prefs.getString(mUuid
                                              + ".transportUri", null));
         mDescription = prefs.getString(mUuid + ".description", null);
@@ -221,7 +239,7 @@ public class Account implements BaseAccount
         mIdleRefreshMinutes = prefs.getInt(mUuid
                                            + ".idleRefreshMinutes", 24);
         mSaveAllHeaders = prefs.getBoolean(mUuid
-                                           + ".saveAllHeaders", false);
+                                           + ".saveAllHeaders", true);
         mPushPollOnConnect = prefs.getBoolean(mUuid
                                               + ".pushPollOnConnect", true);
         mDisplayCount = prefs.getInt(mUuid + ".displayCount", K9.DEFAULT_VISIBLE_LIMIT);
@@ -263,6 +281,7 @@ public class Account implements BaseAccount
         maximumAutoDownloadMessageSize = prefs.getInt(mUuid
                                          + ".maximumAutoDownloadMessageSize", 32768);
         mQuotePrefix = prefs.getString(mUuid + ".quotePrefix", DEFAULT_QUOTE_PREFIX);
+        mReplyAfterQuote = prefs.getBoolean(mUuid + ".replyAfterQuote", DEFAULT_REPLY_AFTER_QUOTE);
         for (String type : networkTypes)
         {
             Boolean useCompression = prefs.getBoolean(mUuid + ".useCompression." + type,
@@ -282,13 +301,6 @@ public class Account implements BaseAccount
                                   (random.nextInt(0x70) * 0xff) +
                                   (random.nextInt(0x70) * 0xffff) +
                                   0xff000000);
-        mLedColor = prefs.getInt(mUuid+".ledColor", mChipColor);
-
-        mVibrate = prefs.getBoolean(mUuid + ".vibrate", false);
-        mVibratePattern = prefs.getInt(mUuid + ".vibratePattern", 0);
-        mVibrateTimes = prefs.getInt(mUuid + ".vibrateTimes", 5);
-
-        mRing = prefs.getBoolean(mUuid + ".ring", true);
 
         try
         {
@@ -313,7 +325,7 @@ public class Account implements BaseAccount
         try
         {
             mShowPictures = ShowPictures.valueOf(prefs.getString(mUuid + ".showPicturesEnum",
-                                          ShowPictures.NEVER.name()));
+                                                 ShowPictures.NEVER.name()));
         }
         catch (Exception e)
         {
@@ -322,8 +334,15 @@ public class Account implements BaseAccount
 
         mEnableMoveButtons = prefs.getBoolean(mUuid + ".enableMoveButtons", false);
 
-        mRingtoneUri = prefs.getString(mUuid  + ".ringtone",
-                                       "content://settings/system/notification_sound");
+        mNotificationSetting.setVibrate(prefs.getBoolean(mUuid + ".vibrate", false));
+        mNotificationSetting.setVibratePattern(prefs.getInt(mUuid + ".vibratePattern", 0));
+        mNotificationSetting.setVibrateTimes(prefs.getInt(mUuid + ".vibrateTimes", 5));
+        mNotificationSetting.setRing(prefs.getBoolean(mUuid + ".ring", true));
+        mNotificationSetting.setRingtone(prefs.getString(mUuid  + ".ringtone",
+                                         "content://settings/system/notification_sound"));
+        mNotificationSetting.setLed(prefs.getBoolean(mUuid + ".led", true));
+        mNotificationSetting.setLedColor(prefs.getInt(mUuid+".ledColor", mChipColor));
+
         try
         {
             mFolderDisplayMode = FolderMode.valueOf(prefs.getString(mUuid  + ".folderDisplayMode",
@@ -377,7 +396,7 @@ public class Account implements BaseAccount
         mIsSignatureBeforeQuotedText = prefs.getBoolean(mUuid  + ".signatureBeforeQuotedText", false);
         identities = loadIdentities(prefs);
 
-        mCryptoApp = prefs.getString(mUuid + ".cryptoApp", "");
+        mCryptoApp = prefs.getString(mUuid + ".cryptoApp", Apg.NAME);
         mCryptoAutoSignature = prefs.getBoolean(mUuid + ".cryptoAutoSignature", false);
     }
 
@@ -439,14 +458,21 @@ public class Account implements BaseAccount
         editor.remove(mUuid + ".expungePolicy");
         editor.remove(mUuid + ".syncRemoteDeletions");
         editor.remove(mUuid + ".maxPushFolders");
-        editor.remove(mUuid  + ".searchableFolders");
-        editor.remove(mUuid  + ".chipColor");
-        editor.remove(mUuid  + ".ledColor");
+        editor.remove(mUuid + ".searchableFolders");
+        editor.remove(mUuid + ".chipColor");
+        editor.remove(mUuid + ".led");
+        editor.remove(mUuid + ".ledColor");
         editor.remove(mUuid + ".goToUnreadMessageSearch");
         editor.remove(mUuid + ".subscribedFoldersOnly");
         editor.remove(mUuid + ".maximumPolledMessageAge");
         editor.remove(mUuid + ".maximumAutoDownloadMessageSize");
         editor.remove(mUuid + ".quotePrefix");
+        editor.remove(mUuid + ".showPicturesEnum");
+        editor.remove(mUuid + ".replyAfterQuote");
+        editor.remove(mUuid + ".cryptoApp");
+        editor.remove(mUuid + ".cryptoAutoSignature");
+        editor.remove(mUuid + ".enableMoveButtons");
+        editor.remove(mUuid + ".hideMoveButtonsEnum");
         for (String type : networkTypes)
         {
             editor.remove(mUuid + ".useCompression." + type);
@@ -495,7 +521,7 @@ public class Account implements BaseAccount
         }
 
         editor.putString(mUuid + ".storeUri", Utility.base64Encode(mStoreUri));
-        editor.putString(mUuid + ".localStoreUri", mLocalStoreUri);
+        editor.putString(mUuid + ".localStorageProvider", mLocalStorageProviderId);
         editor.putString(mUuid + ".transportUri", Utility.base64Encode(mTransportUri));
         editor.putString(mUuid + ".description", mDescription);
         editor.putString(mUuid + ".alwaysBcc", mAlwaysBcc);
@@ -517,15 +543,10 @@ public class Account implements BaseAccount
         editor.putString(mUuid + ".outboxFolderName", mOutboxFolderName);
         editor.putString(mUuid + ".autoExpandFolderName", mAutoExpandFolderName);
         editor.putInt(mUuid + ".accountNumber", mAccountNumber);
-        editor.putBoolean(mUuid + ".vibrate", mVibrate);
-        editor.putInt(mUuid + ".vibratePattern", mVibratePattern);
-        editor.putInt(mUuid + ".vibrateTimes", mVibrateTimes);
-        editor.putBoolean(mUuid + ".ring", mRing);
         editor.putString(mUuid + ".hideButtonsEnum", mHideMessageViewButtons.name());
         editor.putString(mUuid + ".hideMoveButtonsEnum", mHideMessageViewMoveButtons.name());
         editor.putString(mUuid + ".showPicturesEnum", mShowPictures.name());
         editor.putBoolean(mUuid + ".enableMoveButtons", mEnableMoveButtons);
-        editor.putString(mUuid + ".ringtone", mRingtoneUri);
         editor.putString(mUuid + ".folderDisplayMode", mFolderDisplayMode.name());
         editor.putString(mUuid + ".folderSyncMode", mFolderSyncMode.name());
         editor.putString(mUuid + ".folderPushMode", mFolderPushMode.name());
@@ -536,14 +557,22 @@ public class Account implements BaseAccount
         editor.putInt(mUuid + ".maxPushFolders", mMaxPushFolders);
         editor.putString(mUuid  + ".searchableFolders", searchableFolders.name());
         editor.putInt(mUuid + ".chipColor", mChipColor);
-        editor.putInt(mUuid + ".ledColor", mLedColor);
         editor.putBoolean(mUuid + ".goToUnreadMessageSearch", goToUnreadMessageSearch);
         editor.putBoolean(mUuid + ".subscribedFoldersOnly", subscribedFoldersOnly);
         editor.putInt(mUuid + ".maximumPolledMessageAge", maximumPolledMessageAge);
         editor.putInt(mUuid + ".maximumAutoDownloadMessageSize", maximumAutoDownloadMessageSize);
         editor.putString(mUuid + ".quotePrefix", mQuotePrefix);
+        editor.putBoolean(mUuid + ".replyAfterQuote", mReplyAfterQuote);
         editor.putString(mUuid + ".cryptoApp", mCryptoApp);
         editor.putBoolean(mUuid + ".cryptoAutoSignature", mCryptoAutoSignature);
+
+        editor.putBoolean(mUuid + ".vibrate", mNotificationSetting.shouldVibrate());
+        editor.putInt(mUuid + ".vibratePattern", mNotificationSetting.getVibratePattern());
+        editor.putInt(mUuid + ".vibrateTimes", mNotificationSetting.getVibrateTimes());
+        editor.putBoolean(mUuid + ".ring", mNotificationSetting.shouldRing());
+        editor.putString(mUuid + ".ringtone", mNotificationSetting.getRingtone());
+        editor.putBoolean(mUuid + ".led", mNotificationSetting.isLed());
+        editor.putInt(mUuid + ".ledColor", mNotificationSetting.getLedColor());
 
         for (String type : networkTypes)
         {
@@ -559,8 +588,32 @@ public class Account implements BaseAccount
 
     }
 
+    public void resetVisibleLimits()
+    {
+        try
+        {
+            LocalStore localStore = getLocalStore();
+            localStore.resetVisibleLimits(getDisplayCount());
+        }
+        catch (MessagingException e)
+        {
+            Log.e(K9.LOG_TAG, "Unable to reset visible limits", e);
+        }
+
+    }
+
+    /**
+     * @param context
+     * @return <code>null</code> if not available
+     * @throws MessagingException
+     * @see {@link #isAvailable(Context)}
+     */
     public AccountStats getStats(Context context) throws MessagingException
     {
+        if (!isAvailable(context))
+        {
+            return null;
+        }
         long startTime = System.currentTimeMillis();
         AccountStats stats = new AccountStats();
         int unreadMessageCount = 0;
@@ -575,7 +628,6 @@ public class Account implements BaseAccount
         long folderLoadStart = System.currentTimeMillis();
         List<? extends Folder> folders = localStore.getPersonalNamespaces(false);
         long folderLoadEnd = System.currentTimeMillis();
-        long folderEvalStart = folderLoadEnd;
         for (Folder folder : folders)
         {
             LocalFolder localFolder = (LocalFolder)folder;
@@ -624,7 +676,7 @@ public class Account implements BaseAccount
         if (K9.DEBUG)
             Log.d(K9.LOG_TAG, "Account.getStats() on " + getDescription() + " took " + (endTime - startTime) + " ms;"
                   + " loading " + folders.size() + " took " + (folderLoadEnd - folderLoadStart) + " ms;"
-                  + " evaluating took " + (folderEvalEnd - folderEvalStart) + " ms");
+                  + " evaluating took " + (folderEvalEnd - folderLoadEnd) + " ms");
         return stats;
     }
 
@@ -639,16 +691,6 @@ public class Account implements BaseAccount
         return mChipColor;
     }
 
-
-    public synchronized void setLedColor(int color)
-    {
-        mLedColor = color;
-    }
-
-    public synchronized int getLedColor()
-    {
-        return mLedColor;
-    }
 
     public String getUuid()
     {
@@ -740,38 +782,6 @@ public class Account implements BaseAccount
         this.mAlwaysBcc = alwaysBcc;
     }
 
-    public synchronized boolean isVibrate()
-    {
-        return mVibrate;
-    }
-
-    public synchronized void setVibrate(boolean vibrate)
-    {
-        mVibrate = vibrate;
-    }
-
-    public synchronized int getVibratePattern()
-    {
-        return mVibratePattern;
-    }
-
-    public synchronized void setVibratePattern(int pattern)
-    {
-        mVibratePattern = pattern;
-    }
-
-    public synchronized int getVibrateTimes()
-    {
-        return mVibrateTimes;
-    }
-
-    public synchronized void setVibrateTimes(int times)
-    {
-        mVibrateTimes = times;
-    }
-
-
-
     /* Have we sent a new mail notification on this account */
     public boolean isRingNotified()
     {
@@ -783,25 +793,44 @@ public class Account implements BaseAccount
         mRingNotified = ringNotified;
     }
 
-    public synchronized String getRingtone()
+    public String getLocalStorageProviderId()
     {
-        return mRingtoneUri;
+        return mLocalStorageProviderId;
     }
 
-    public synchronized void setRingtone(String ringtoneUri)
+    public void setLocalStorageProviderId(String id)
     {
-        mRingtoneUri = ringtoneUri;
+
+        if (!mLocalStorageProviderId.equals(id))
+        {
+
+            boolean successful = false;
+            try
+            {
+                switchLocalStorage(id);
+                successful = true;
+            }
+            catch (MessagingException e)
+            {
+            }
+            finally
+            {
+                // if migration to/from SD-card failed once, it will fail again.
+                if (!successful)
+                {
+                    return;
+                }
+            }
+
+            mLocalStorageProviderId = id;
+        }
+
     }
 
-    public synchronized String getLocalStoreUri()
-    {
-        return mLocalStoreUri;
-    }
-
-    public synchronized void setLocalStoreUri(String localStoreUri)
-    {
-        this.mLocalStoreUri = localStoreUri;
-    }
+//    public synchronized void setLocalStoreUri(String localStoreUri)
+//    {
+//        this.mLocalStoreUri = localStoreUri;
+//    }
 
     /**
      * Returns -1 for never.
@@ -817,10 +846,9 @@ public class Account implements BaseAccount
     public synchronized boolean setAutomaticCheckIntervalMinutes(int automaticCheckIntervalMinutes)
     {
         int oldInterval = this.mAutomaticCheckIntervalMinutes;
-        int newInterval = automaticCheckIntervalMinutes;
         this.mAutomaticCheckIntervalMinutes = automaticCheckIntervalMinutes;
 
-        return (oldInterval != newInterval);
+        return (oldInterval != automaticCheckIntervalMinutes);
     }
 
     public synchronized int getDisplayCount()
@@ -838,6 +866,7 @@ public class Account implements BaseAccount
         {
             this.mDisplayCount = K9.DEFAULT_VISIBLE_LIMIT;
         }
+        resetVisibleLimits();
     }
 
     public synchronized long getLastAutomaticCheckTime()
@@ -1088,16 +1117,6 @@ public class Account implements BaseAccount
         return oldMaxPushFolders != maxPushFolders;
     }
 
-    public synchronized boolean shouldRing()
-    {
-        return mRing;
-    }
-
-    public synchronized void setRing(boolean ring)
-    {
-        mRing = ring;
-    }
-
     public LocalStore getLocalStore() throws MessagingException
     {
         return Store.getLocalInstance(this, K9.app);
@@ -1336,7 +1355,7 @@ public class Account implements BaseAccount
         mPushPollOnConnect = pushPollOnConnect;
     }
 
-    public synchronized boolean isSaveAllHeaders()
+    public synchronized boolean saveAllHeaders()
     {
         return mSaveAllHeaders;
     }
@@ -1344,6 +1363,25 @@ public class Account implements BaseAccount
     public synchronized void setSaveAllHeaders(boolean saveAllHeaders)
     {
         mSaveAllHeaders = saveAllHeaders;
+    }
+
+    /**
+     * Are we storing out localStore on the SD-card instead of the local device
+     * memory?<br/>
+     * Only to be called durin initial account-setup!<br/>
+     * Side-effect: changes {@link #mLocalStorageProviderId}.
+     *
+     * @param context
+     * @param newStorageProviderId
+     *            Never <code>null</code>.
+     * @throws MessagingException
+     */
+    public void switchLocalStorage(final String newStorageProviderId) throws MessagingException
+    {
+        if (!mLocalStorageProviderId.equals(newStorageProviderId))
+        {
+            getLocalStore().switchLocalStorage(newStorageProviderId);
+        }
     }
 
     public synchronized boolean goToUnreadMessageSearch()
@@ -1437,6 +1475,16 @@ public class Account implements BaseAccount
         mQuotePrefix = quotePrefix;
     }
 
+    public synchronized boolean isReplyAfterQuote()
+    {
+        return mReplyAfterQuote;
+    }
+
+    public synchronized void setReplyAfterQuote(boolean replyAfterQuote)
+    {
+        mReplyAfterQuote = replyAfterQuote;
+    }
+
     public boolean getEnableMoveButtons()
     {
         return mEnableMoveButtons;
@@ -1455,6 +1503,8 @@ public class Account implements BaseAccount
     public void setCryptoApp(String cryptoApp)
     {
         mCryptoApp = cryptoApp;
+        // invalidate the provider
+        mCryptoProvider = null;
     }
 
     public boolean getCryptoAutoSignature()
@@ -1485,4 +1535,38 @@ public class Account implements BaseAccount
     {
         lastSelectedFolderName = folderName;
     }
+
+    public boolean isInUse()
+    {
+        return mIsInUse;
+    }
+
+    public synchronized CryptoProvider getCryptoProvider()
+    {
+        if (mCryptoProvider == null)
+        {
+            mCryptoProvider = CryptoProvider.createInstance(getCryptoApp());
+        }
+        return mCryptoProvider;
+    }
+
+    public synchronized NotificationSetting getNotificationSetting()
+    {
+        return mNotificationSetting;
+    }
+
+    /**
+     * @return <code>true</code> if our {@link StorageProvider} is ready. (e.g.
+     *         card inserted)
+     */
+    public boolean isAvailable(Context context)
+    {
+        String localStorageProviderId = getLocalStorageProviderId();
+        if (localStorageProviderId == null)
+        {
+            return true; // defaults to internal memory
+        }
+        return StorageManager.getInstance(K9.app).isReady(localStorageProviderId);
+    }
+
 }

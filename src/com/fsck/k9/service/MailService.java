@@ -4,9 +4,6 @@ package com.fsck.k9.service;
 import java.util.Collection;
 import java.util.Date;
 
-import android.app.Notification;
-import android.app.NotificationManager;
-import android.app.PendingIntent;
 import android.content.Context;
 import android.content.Intent;
 import android.content.SharedPreferences;
@@ -19,7 +16,6 @@ import android.util.Log;
 import com.fsck.k9.Account;
 import com.fsck.k9.K9;
 import com.fsck.k9.Preferences;
-import com.fsck.k9.R;
 import com.fsck.k9.Account.FolderMode;
 import com.fsck.k9.controller.MessagingController;
 import com.fsck.k9.helper.AutoSyncHelper;
@@ -213,7 +209,6 @@ public class MailService extends CoreService
             }
             else if (CONNECTIVITY_CHANGE.equals(intent.getAction()))
             {
-                notifyConnectionStatus(hasConnectivity);
                 rescheduleAll(hasConnectivity, doBackground, startIdObj);
                 startIdObj = null;
                 if (K9.DEBUG)
@@ -221,7 +216,6 @@ public class MailService extends CoreService
             }
             else if (CANCEL_CONNECTIVITY_NOTICE.equals(intent.getAction()))
             {
-                notifyConnectionStatus(true);
             }
         }
         finally
@@ -242,36 +236,6 @@ public class MailService extends CoreService
 
     }
 
-    private void notifyConnectionStatus(boolean hasConnectivity)
-    {
-        if (true) return;
-        NotificationManager notifMgr =
-            (NotificationManager)getApplication().getSystemService(Context.NOTIFICATION_SERVICE);
-        if (hasConnectivity == false)
-        {
-            String notice = getApplication().getString(R.string.no_connection_alert);
-            String header = getApplication().getString(R.string.alert_header);
-
-
-            Notification notif = new Notification(R.drawable.stat_notify_email_generic,
-                                                  header, System.currentTimeMillis());
-
-            Intent i = new Intent();
-            i.setClassName(getApplication().getPackageName(), "com.fsck.k9.service.MailService");
-            i.setAction(MailService.CANCEL_CONNECTIVITY_NOTICE);
-
-            PendingIntent pi = PendingIntent.getService(this, 0, i, 0);
-
-            notif.setLatestEventInfo(getApplication(), header, notice, pi);
-            notif.flags = Notification.FLAG_ONGOING_EVENT;
-
-            notifMgr.notify(K9.CONNECTIVITY_ID, notif);
-        }
-        else
-        {
-            notifMgr.cancel(K9.CONNECTIVITY_ID);
-        }
-    }
 
     @Override
     public void onDestroy()
@@ -343,7 +307,7 @@ public class MailService extends CoreService
                     else
                     {
                         long delay = (shortestInterval * (60 * 1000));
-                        long base = (previousInterval == -1 || lastCheckEnd == -1 || considerLastCheckEnd == false ? System.currentTimeMillis() : lastCheckEnd);
+                        long base = (previousInterval == -1 || lastCheckEnd == -1 || !considerLastCheckEnd ? System.currentTimeMillis() : lastCheckEnd);
                         long nextTime = base + delay;
                         if (K9.DEBUG)
                             Log.i(K9.LOG_TAG,
@@ -410,6 +374,14 @@ public class MailService extends CoreService
                     setupPushers(null);
                     schedulePushers(startId);
                 }
+                else
+                {
+                    if (K9.DEBUG)
+                    {
+                        Log.i(K9.LOG_TAG, "Not scheduling pushers:  connectivity? "+hasConnectivity + " -- doBackground? "+doBackground);
+
+                    }
+                }
 
             }
         }
@@ -427,7 +399,14 @@ public class MailService extends CoreService
                 {
                     if (K9.DEBUG)
                         Log.i(K9.LOG_TAG, "Setting up pushers for account " + account.getDescription());
-                    pushing |= MessagingController.getInstance(getApplication()).setupPushing(account);
+                    if (account.isAvailable(getApplicationContext()))
+                    {
+                        pushing |= MessagingController.getInstance(getApplication()).setupPushing(account);
+                    }
+                    else
+                    {
+                        //TODO: setupPushing of unavailable accounts when they become available (sd-card inserted)
+                    }
                 }
                 if (pushing)
                 {
@@ -474,6 +453,14 @@ public class MailService extends CoreService
                             }
                         }
                     }
+                    // Whenever we refresh our pushers, send any unsent messages
+                    if (K9.DEBUG)
+                    {
+                        Log.d(K9.LOG_TAG, "PUSHREFRESH:  trying to send mail in all folders!");
+                    }
+
+                    MessagingController.getInstance(getApplication()).sendPendingMessages(null);
+
                 }
                 catch (Exception e)
                 {

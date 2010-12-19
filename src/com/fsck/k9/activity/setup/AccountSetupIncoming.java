@@ -16,22 +16,19 @@ import com.fsck.k9.*;
 import com.fsck.k9.activity.ChooseFolder;
 import com.fsck.k9.activity.K9Activity;
 import com.fsck.k9.helper.Utility;
+import com.fsck.k9.mail.store.StorageManager;
+
 import java.io.UnsupportedEncodingException;
 import java.net.URI;
 import java.net.URISyntaxException;
 import java.net.URLDecoder;
 import java.net.URLEncoder;
+import java.util.Map;
 
 public class AccountSetupIncoming extends K9Activity implements OnClickListener
 {
     private static final String EXTRA_ACCOUNT = "account";
     private static final String EXTRA_MAKE_DEFAULT = "makeDefault";
-
-    private static final int SELECT_DRAFT_FOLDER = 100;
-    private static final int SELECT_SENT_FOLDER = 101;
-    private static final int SELECT_TRASH_FOLDER = 102;
-    private static final int SELECT_ARCHIVE_FOLDER = 103;
-    private static final int SELECT_SPAM_FOLDER = 104;
 
     private static final int popPorts[] =
     {
@@ -73,12 +70,6 @@ public class AccountSetupIncoming extends K9Activity implements OnClickListener
     private Spinner mSecurityTypeView;
     private Spinner mAuthTypeView;
     private EditText mImapPathPrefixView;
-    private Button mImapFolderDrafts;
-    private Button mImapFolderSent;
-    private Button mImapFolderTrash;
-    private Button mImapFolderArchive;
-    private Button mImapFolderSpam;
-    private EditText mImapFolderOutbox;
     private EditText mWebdavPathPrefixView;
     private EditText mWebdavAuthPathView;
     private EditText mWebdavMailboxPathView;
@@ -88,10 +79,6 @@ public class AccountSetupIncoming extends K9Activity implements OnClickListener
     private CheckBox compressionMobile;
     private CheckBox compressionWifi;
     private CheckBox compressionOther;
-    private CheckBox saveAllHeaders;
-    private CheckBox pushPollOnConnect;
-    private Spinner idleRefreshPeriod;
-    private Spinner folderPushLimit;
     private CheckBox subscribedFoldersOnly;
 
     public static void actionIncomingSettings(Activity context, Account account, boolean makeDefault)
@@ -124,12 +111,6 @@ public class AccountSetupIncoming extends K9Activity implements OnClickListener
         mSecurityTypeView = (Spinner)findViewById(R.id.account_security_type);
         mAuthTypeView = (Spinner)findViewById(R.id.account_auth_type);
         mImapPathPrefixView = (EditText)findViewById(R.id.imap_path_prefix);
-        mImapFolderDrafts = (Button)findViewById(R.id.account_imap_folder_drafts);
-        mImapFolderSent = (Button)findViewById(R.id.account_imap_folder_sent);
-        mImapFolderTrash = (Button)findViewById(R.id.account_imap_folder_trash);
-        mImapFolderArchive = (Button)findViewById(R.id.account_imap_folder_archive);
-        mImapFolderSpam = (Button)findViewById(R.id.account_imap_folder_spam);
-        mImapFolderOutbox = (EditText)findViewById(R.id.account_imap_folder_outbox);
         mWebdavPathPrefixView = (EditText)findViewById(R.id.webdav_path_prefix);
         mWebdavAuthPathView = (EditText)findViewById(R.id.webdav_auth_path);
         mWebdavMailboxPathView = (EditText)findViewById(R.id.webdav_mailbox_path);
@@ -137,19 +118,8 @@ public class AccountSetupIncoming extends K9Activity implements OnClickListener
         compressionMobile = (CheckBox)findViewById(R.id.compression_mobile);
         compressionWifi = (CheckBox)findViewById(R.id.compression_wifi);
         compressionOther = (CheckBox)findViewById(R.id.compression_other);
-        saveAllHeaders = (CheckBox)findViewById(R.id.save_all_headers);
-        pushPollOnConnect = (CheckBox)findViewById(R.id.push_poll_on_connect);
-
         subscribedFoldersOnly = (CheckBox)findViewById(R.id.subscribed_folders_only);
-        idleRefreshPeriod = (Spinner)findViewById(R.id.idle_refresh_period);
 
-        folderPushLimit = (Spinner)findViewById(R.id.folder_push_limit);
-
-        mImapFolderDrafts.setOnClickListener(this);
-        mImapFolderSent.setOnClickListener(this);
-        mImapFolderTrash.setOnClickListener(this);
-        mImapFolderArchive.setOnClickListener(this);
-        mImapFolderSpam.setOnClickListener(this);
         mNextButton.setOnClickListener(this);
 
         SpinnerOption securityTypes[] =
@@ -228,7 +198,7 @@ public class AccountSetupIncoming extends K9Activity implements OnClickListener
 
         String accountUuid = getIntent().getStringExtra(EXTRA_ACCOUNT);
         mAccount = Preferences.getPreferences(this).getAccount(accountUuid);
-        mMakeDefault = (boolean)getIntent().getBooleanExtra(EXTRA_MAKE_DEFAULT, false);
+        mMakeDefault = getIntent().getBooleanExtra(EXTRA_MAKE_DEFAULT, false);
 
         /*
          * If we're being reloaded we override the original account with the one
@@ -291,32 +261,17 @@ public class AccountSetupIncoming extends K9Activity implements OnClickListener
             }
 
 
-            mImapFolderDrafts.setText(mAccount.getDraftsFolderName());
-            mImapFolderSent.setText(mAccount.getSentFolderName());
-            mImapFolderTrash.setText(mAccount.getTrashFolderName());
-            mImapFolderArchive.setText(mAccount.getArchiveFolderName());
-            mImapFolderSpam.setText(mAccount.getSpamFolderName());
-            mImapFolderOutbox.setText(mAccount.getOutboxFolderName());
-
             if (uri.getScheme().startsWith("pop3"))
             {
                 serverLabelView.setText(R.string.account_setup_incoming_pop_server_label);
                 mAccountPorts = popPorts;
                 mAccountSchemes = popSchemes;
-
-                findViewById(R.id.imap_path_prefix_section).setVisibility(View.GONE);
-                findViewById(R.id.imap_folder_setup_section).setVisibility(View.GONE);
                 findViewById(R.id.webdav_path_prefix_section).setVisibility(View.GONE);
                 findViewById(R.id.webdav_path_debug_section).setVisibility(View.GONE);
                 findViewById(R.id.account_auth_type_label).setVisibility(View.GONE);
                 findViewById(R.id.account_auth_type).setVisibility(View.GONE);
                 findViewById(R.id.compression_section).setVisibility(View.GONE);
                 findViewById(R.id.compression_label).setVisibility(View.GONE);
-                findViewById(R.id.push_poll_on_connect_section).setVisibility(View.GONE);
-                findViewById(R.id.idle_refresh_period_label).setVisibility(View.GONE);
-                findViewById(R.id.idle_refresh_period).setVisibility(View.GONE);
-                findViewById(R.id.account_setup_push_limit_label).setVisibility(View.GONE);
-                findViewById(R.id.folder_push_limit).setVisibility(View.GONE);
                 mAccount.setDeletePolicy(Account.DELETE_POLICY_NEVER);
 
 
@@ -353,11 +308,6 @@ public class AccountSetupIncoming extends K9Activity implements OnClickListener
                 findViewById(R.id.account_auth_type).setVisibility(View.GONE);
                 findViewById(R.id.compression_section).setVisibility(View.GONE);
                 findViewById(R.id.compression_label).setVisibility(View.GONE);
-                findViewById(R.id.push_poll_on_connect_section).setVisibility(View.GONE);
-                findViewById(R.id.idle_refresh_period_label).setVisibility(View.GONE);
-                findViewById(R.id.idle_refresh_period).setVisibility(View.GONE);
-                findViewById(R.id.account_setup_push_limit_label).setVisibility(View.GONE);
-                findViewById(R.id.folder_push_limit).setVisibility(View.GONE);
                 subscribedFoldersOnly.setVisibility(View.GONE);
                 if (uri.getPath() != null && uri.getPath().length() > 0)
                 {
@@ -423,14 +373,8 @@ public class AccountSetupIncoming extends K9Activity implements OnClickListener
                 updatePortFromSecurityType();
             }
 
-            saveAllHeaders.setChecked(mAccount.isSaveAllHeaders());
-            pushPollOnConnect.setChecked(mAccount.isPushPollOnConnect());
             subscribedFoldersOnly.setChecked(mAccount.subscribedFoldersOnly());
-            SpinnerHelper.initSpinner(this, idleRefreshPeriod, R.array.idle_refresh_period_entries,
-                                      R.array.idle_refresh_period_values, String.valueOf(mAccount.getIdleRefreshMinutes()));
 
-            SpinnerHelper.initSpinner(this, folderPushLimit, R.array.account_settings_push_limit_entries,
-                                      R.array.account_settings_push_limit_values, String.valueOf(mAccount.getMaxPushFolders()));
 
             validateFields();
         }
@@ -472,24 +416,6 @@ public class AccountSetupIncoming extends K9Activity implements OnClickListener
     {
         if (resultCode == RESULT_OK)
         {
-            switch (requestCode)
-            {
-                case SELECT_DRAFT_FOLDER:
-                    mImapFolderDrafts.setText(data.getStringExtra(ChooseFolder.EXTRA_NEW_FOLDER));
-                    return;
-                case SELECT_SENT_FOLDER:
-                    mImapFolderSent.setText(data.getStringExtra(ChooseFolder.EXTRA_NEW_FOLDER));
-                    return;
-                case SELECT_TRASH_FOLDER:
-                    mImapFolderTrash.setText(data.getStringExtra(ChooseFolder.EXTRA_NEW_FOLDER));
-                    return;
-                case SELECT_ARCHIVE_FOLDER:
-                    mImapFolderArchive.setText(data.getStringExtra(ChooseFolder.EXTRA_NEW_FOLDER));
-                    return;
-                case SELECT_SPAM_FOLDER:
-                    mImapFolderSpam.setText(data.getStringExtra(ChooseFolder.EXTRA_NEW_FOLDER));
-                    return;
-            }
             if (Intent.ACTION_EDIT.equals(getIntent().getAction()))
             {
                 mAccount.save(Preferences.getPreferences(this));
@@ -536,7 +462,7 @@ public class AccountSetupIncoming extends K9Activity implements OnClickListener
         }
     }
 
-    private void onNext()
+    protected void onNext()
     {
         try
         {
@@ -579,38 +505,10 @@ public class AccountSetupIncoming extends K9Activity implements OnClickListener
             mAccount.setStoreUri(uri.toString());
 
 
-            mAccount.setDraftsFolderName(mImapFolderDrafts.getText().toString());
-            mAccount.setSentFolderName(mImapFolderSent.getText().toString());
-            mAccount.setTrashFolderName(mImapFolderTrash.getText().toString());
-            mAccount.setArchiveFolderName(mImapFolderArchive.getText().toString());
-            mAccount.setSpamFolderName(mImapFolderSpam.getText().toString());
-            mAccount.setOutboxFolderName(mImapFolderOutbox.getText().toString());
             mAccount.setCompression(Account.TYPE_MOBILE, compressionMobile.isChecked());
             mAccount.setCompression(Account.TYPE_WIFI, compressionWifi.isChecked());
             mAccount.setCompression(Account.TYPE_OTHER, compressionOther.isChecked());
-            mAccount.setSaveAllHeaders(saveAllHeaders.isChecked());
-            mAccount.setPushPollOnConnect(pushPollOnConnect.isChecked());
             mAccount.setSubscribedFoldersOnly(subscribedFoldersOnly.isChecked());
-            String idleRefreshPeriodValue = SpinnerHelper.getSpinnerValue(idleRefreshPeriod);
-            try
-            {
-                mAccount.setIdleRefreshMinutes(Integer.parseInt(idleRefreshPeriodValue));
-            }
-            catch (Exception e)
-            {
-                Log.e(K9.LOG_TAG, "Unable to parse idle refresh period value '" + idleRefreshPeriodValue + "'", e);
-                mAccount.setIdleRefreshMinutes(24);
-            }
-            String maxPushFoldersValue = SpinnerHelper.getSpinnerValue(folderPushLimit);
-            try
-            {
-                mAccount.setMaxPushFolders(Integer.parseInt(maxPushFoldersValue));
-            }
-            catch (Exception e)
-            {
-                Log.e(K9.LOG_TAG, "Unable to parse max push folders value '" + maxPushFoldersValue + "'", e);
-                mAccount.setMaxPushFolders(10);
-            }
 
             AccountSetupCheckSettings.actionCheckSettings(this, mAccount, true, false);
         }
@@ -630,69 +528,12 @@ public class AccountSetupIncoming extends K9Activity implements OnClickListener
                 case R.id.next:
                     onNext();
                     break;
-                case R.id.account_imap_folder_drafts:
-                    selectImapFolder(SELECT_DRAFT_FOLDER);
-                    break;
-                case R.id.account_imap_folder_sent:
-                    selectImapFolder(SELECT_SENT_FOLDER);
-                    break;
-                case R.id.account_imap_folder_trash:
-                    selectImapFolder(SELECT_TRASH_FOLDER);
-                    break;
-                case R.id.account_imap_folder_archive:
-                    selectImapFolder(SELECT_ARCHIVE_FOLDER);
-                    break;
-                case R.id.account_imap_folder_spam:
-                    selectImapFolder(SELECT_SPAM_FOLDER);
-                    break;
             }
         }
         catch (Exception e)
         {
             failure(e);
         }
-    }
-
-    private void selectImapFolder(int activityCode)
-    {
-        String curFolder = null;
-        boolean showFolderNone = false;
-        switch (activityCode)
-        {
-            case SELECT_DRAFT_FOLDER:
-                curFolder = mImapFolderDrafts.getText().toString();
-                break;
-            case SELECT_SENT_FOLDER:
-                curFolder = mImapFolderSent.getText().toString();
-                showFolderNone = true;
-                break;
-            case SELECT_TRASH_FOLDER:
-                curFolder = mImapFolderTrash.getText().toString();
-                showFolderNone = true;
-                break;
-            case SELECT_ARCHIVE_FOLDER:
-                curFolder = mImapFolderArchive.getText().toString();
-                showFolderNone = true;
-                break;
-            case SELECT_SPAM_FOLDER:
-                curFolder = mImapFolderSpam.getText().toString();
-                showFolderNone = true;
-                break;
-            default:
-                throw new IllegalArgumentException(
-                    "Cannot select folder for: " + activityCode);
-        }
-
-        Intent selectIntent = new Intent(this, ChooseFolder.class);
-        String uri = mAccount.getStoreUri();
-        if (showFolderNone && uri.startsWith("imap"))
-        {
-            selectIntent.putExtra(ChooseFolder.EXTRA_SHOW_FOLDER_NONE, "yes");
-        }
-        selectIntent.putExtra(ChooseFolder.EXTRA_ACCOUNT, mAccount.getUuid());
-        selectIntent.putExtra(ChooseFolder.EXTRA_CUR_FOLDER, curFolder);
-        selectIntent.putExtra(ChooseFolder.EXTRA_SHOW_CURRENT, "yes");
-        startActivityForResult(selectIntent, activityCode);
     }
 
     private void failure(Exception use)

@@ -111,7 +111,7 @@ public class MimeHeader
         mFields.removeAll(removeFields);
     }
 
-    public void writeTo(OutputStream out) throws IOException, MessagingException
+    public void writeTo(OutputStream out) throws IOException
     {
         BufferedWriter writer = new BufferedWriter(new OutputStreamWriter(out), 1024);
         for (Field field : mFields)
@@ -152,7 +152,7 @@ public class MimeHeader
         return false;
     }
 
-    class Field
+    static class Field
     {
         String name;
 
@@ -162,6 +162,14 @@ public class MimeHeader
         {
             this.name = name;
             this.value = value;
+        }
+
+        @Override
+        public String toString()
+        {
+            StringBuilder sb = new StringBuilder("(");
+            sb.append(name).append('=').append(value).append(')');
+            return sb.toString();
         }
     }
 }

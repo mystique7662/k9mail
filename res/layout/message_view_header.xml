@@ -62,7 +62,7 @@
                     android:layout_width="wrap_content"
                     android:layout_height="wrap_content"
                     android:paddingRight="4dip"
-                    android:text="@string/message_view_to_label"
+                    android:text="@string/message_to_label"
                     android:textSize="10sp"
                     android:textStyle="bold"
                     android:textColor="?android:attr/textColorSecondary" />
@@ -249,6 +249,10 @@
     <!-- Content area -->
     <WebView
         android:id="@+id/message_content"
+        android:layout_height="wrap_content"
+        android:layout_width="fill_parent" />
+    <com.fsck.k9.view.AccessibleWebView
+        android:id="@+id/accessible_message_content"
         android:layout_height="wrap_content"
         android:layout_width="fill_parent" />
     <!-- Attachments area -->

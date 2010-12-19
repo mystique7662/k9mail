@@ -54,6 +54,7 @@
         <item>@string/account_setup_options_mail_display_count_250</item>
         <item>@string/account_setup_options_mail_display_count_500</item>
         <item>@string/account_setup_options_mail_display_count_1000</item>
+        <item>@string/account_setup_options_mail_display_count_all</item>
     </string-array>
 
     <string-array name="account_settings_display_count_values">
@@ -64,6 +65,7 @@
         <item>250</item>
         <item>500</item>
         <item>1000</item>
+        <item>0</item>
     </string-array>
 
     <string-array name="account_settings_message_age_entries">
@@ -360,6 +362,7 @@
         <item>Azərbaycan</item>
         <item>Euskera</item>
         <item>Français</item>
+        <item>Français (Canada)</item>
         <item>isiXhosa</item>
         <item>isiZulu</item>
         <item>Italiano</item>
@@ -391,7 +394,8 @@
         <item>ಕನ್ನಡ</item>
         <item>ภาษาไทย</item>
         <item>አማርኛ</item>
-        <item>中文</item>
+        <item>中文(繁體)</item>
+        <item>中文(简体)</item>
         <item>日本語</item>
         <item>한국어</item>
     </string-array>
@@ -437,6 +441,7 @@
         <item>az</item>
         <item>eu</item>
         <item>fr</item>
+        <item>fr_CA</item>
         <item>xs</item>
         <item>zu</item>
         <item>it</item>
@@ -468,7 +473,8 @@
         <item>kn</item>
         <item>th</item>
         <item>am</item>
-        <item>zh</item>
+        <item>zh_TW</item>
+        <item>zh_CN</item>
         <item>ja</item>
         <item>ko</item>
     </string-array>
@@ -480,11 +486,16 @@
         <item>en</item>
         <item>es</item>
         <item>fr</item>
+        <item>fr_CA</item>
         <item>it</item>
         <item>ja</item>
+        <item>nl</item>
         <item>pl</item>
         <item>ru</item>
-        <item>zh</item>
+        <item>zh_TW</item>
+        <item>zh_CN</item>
+        <item>fi</item>
+        <item>sv</item>
     </string-array>
 
     <string-array name="settings_theme_entries">
@@ -600,6 +611,18 @@
         <item>5</item>
     </string-array>
 
+    <string-array name="account_settings_vibrate_times_label">
+        <item>2</item>
+        <item>3</item>
+        <item>4</item>
+        <item>5</item>
+        <item>6</item>
+        <item>7</item>
+        <item>8</item>
+        <item>9</item>
+        <item>10</item>
+    </string-array>
+
     <string-array name="account_settings_crypto_app_entries">
         <item>@string/account_settings_crypto_app_none</item>
         <item>APG</item>
@@ -609,5 +632,24 @@
         <item></item>
         <item>apg</item>
     </string-array>
+
+    <string-array name="settings_preview_lines_values">
+        <item>2</item>
+        <item>3</item>
+        <item>4</item>
+        <item>5</item>
+        <item>6</item>
+    </string-array>
+
+    <string-array name="settings_preview_lines_entries">
+        <item>2</item>
+        <item>3</item>
+        <item>4</item>
+        <item>5</item>
+        <item>6</item>
+    </string-array>
+
+
+
 
 </resources>

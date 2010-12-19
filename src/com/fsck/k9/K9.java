@@ -1,15 +1,26 @@
 
 package com.fsck.k9;
 
+import java.io.File;
+import java.lang.reflect.Method;
+import java.util.ArrayList;
+import java.util.List;
+import java.util.concurrent.BlockingQueue;
+import java.util.concurrent.SynchronousQueue;
+
 import android.app.Application;
 import android.content.ComponentName;
 import android.content.Context;
 import android.content.Intent;
+import android.content.IntentFilter;
 import android.content.SharedPreferences;
 import android.content.pm.PackageInfo;
 import android.content.pm.PackageManager;
 import android.content.pm.PackageManager.NameNotFoundException;
 import android.net.Uri;
+import android.os.Handler;
+import android.os.Looper;
+import android.text.format.Time;
 import android.util.Log;
 import android.webkit.WebSettings;
 
@@ -22,15 +33,41 @@ import com.fsck.k9.mail.MessagingException;
 import com.fsck.k9.mail.internet.BinaryTempFileBody;
 import com.fsck.k9.service.BootReceiver;
 import com.fsck.k9.service.MailService;
-
-import java.io.File;
-import java.lang.reflect.Method;
+import com.fsck.k9.service.ShutdownReceiver;
+import com.fsck.k9.service.StorageGoneReceiver;
 
 public class K9 extends Application
 {
+    /**
+     * Components that are interested in knowing when the K9 instance is
+     * available and ready (Android invokes Application.onCreate() after other
+     * components') should implement this interface and register using
+     * {@link K9#registerApplicationAware(ApplicationAware)}.
+     */
+    public static interface ApplicationAware
+    {
+        /**
+         * Called when the Application instance is available and ready.
+         *
+         * @param application
+         *            The application instance. Never <code>null</code>.
+         * @throws Exception
+         */
+        void initializeComponent(K9 application);
+    }
+
     public static Application app = null;
     public static File tempDirectory;
     public static final String LOG_TAG = "k9";
+
+    /**
+     * Components that are interested in knowing when the K9 instance is
+     * available and ready.
+     *
+     * @see ApplicationAware
+     */
+    private static List<ApplicationAware> observers = new ArrayList<ApplicationAware>();
+
 
     public enum BACKGROUND_OPS
     {
@@ -105,19 +142,32 @@ public class K9 extends Application
 
     private static boolean mAnimations = true;
 
+    private static boolean mConfirmDelete = false;
+    private static boolean mKeyguardPrivacy = false;
 
     private static boolean mMessageListStars = true;
     private static boolean mMessageListCheckboxes = false;
     private static boolean mMessageListTouchable = false;
+    private static int mMessageListPreviewLines = 2;
 
+    private static boolean mShowContactName = false;
+    private static boolean mChangeContactNameColor = false;
+    private static int mContactNameColor = 0xff00008f;
     private static boolean mMessageViewFixedWidthFont = false;
     private static boolean mMessageViewReturnToList = false;
 
     private static boolean mGesturesEnabled = true;
+    private static boolean mUseVolumeKeysForNavigation = false;
+    private static boolean mUseVolumeKeysForListNavigation = false;
     private static boolean mManageBack = false;
     private static boolean mStartIntegratedInbox = false;
     private static boolean mMeasureAccounts = true;
     private static boolean mCountSearchMessages = true;
+    private static boolean mZoomControlsEnabled = false;
+    private static boolean mMobileOptimizedLayout = false;
+    private static boolean mQuietTimeEnabled = false;
+    private static String mQuietTimeStarts = null;
+    private static String mQuietTimeEnds = null;
 
     private static boolean useGalleryBugWorkaround = false;
     private static boolean galleryBuggy;
@@ -129,18 +179,6 @@ public class K9 extends Application
      * to call the method.
      */
     private static final Method mGetBlockNetworkLoads = getMethod(WebSettings.class, "setBlockNetworkLoads");
-
-
-    /**
-     * The MIME type(s) of attachments we're willing to send. At the moment it is not possible
-     * to open a chooser with a list of filter types, so the chooser is only opened with the first
-     * item in the list. The entire list will be used to filter down attachments that are added
-     * with Intent.ACTION_SEND.
-     */
-    public static final String[] ACCEPTABLE_ATTACHMENT_SEND_TYPES = new String[]
-    {
-        "*/*"
-    };
 
     /**
      * The MIME type(s) of attachments we're willing to view.
@@ -197,13 +235,6 @@ public class K9 extends Application
     public static int DEFAULT_VISIBLE_LIMIT = 25;
 
     /**
-     * Number of additioanl messages to load when a user selectes "Load more messages..."
-     */
-    public static int VISIBLE_LIMIT_INCREMENT = 25;
-
-    public static int MAX_SEND_ATTEMPTS = 5;
-
-    /**
      * The maximum size of an attachment we're willing to download (either View or Save)
      * Attachments that are base64 encoded (most) will be about 1.375x their actual size
      * so we should probably factor that in. A 5MB attachment will generally be around
@@ -225,33 +256,37 @@ public class K9 extends Application
     public static final int BOOT_RECEIVER_WAKE_LOCK_TIMEOUT = 60000;
 
     /**
-     * Time the LED is on when blinking on new email notification
+     * Time the LED is on/off when blinking on new email notification
      */
     public static final int NOTIFICATION_LED_ON_TIME = 500;
-
-    /**
-     * Time the LED is off when blicking on new email notification
-     */
     public static final int NOTIFICATION_LED_OFF_TIME = 2000;
 
     public static final boolean NOTIFICATION_LED_WHILE_SYNCING = false;
     public static final int NOTIFICATION_LED_FAST_ON_TIME = 100;
     public static final int NOTIFICATION_LED_FAST_OFF_TIME = 100;
 
+
+    public static final int NOTIFICATION_LED_BLINK_SLOW = 0;
+    public static final int NOTIFICATION_LED_BLINK_FAST = 1;
+
+
+
     public static final int NOTIFICATION_LED_SENDING_FAILURE_COLOR = 0xffff0000;
 
     // Must not conflict with an account number
     public static final int FETCHING_EMAIL_NOTIFICATION      = -5000;
+    public static final int SEND_FAILED_NOTIFICATION      = -1500;
     public static final int CONNECTIVITY_ID = -3;
 
 
-    public class Intents
+    public static class Intents
     {
 
-        public class EmailReceived
+        public static class EmailReceived
         {
             public static final String ACTION_EMAIL_RECEIVED    = "com.fsck.k9.intent.action.EMAIL_RECEIVED";
             public static final String ACTION_EMAIL_DELETED     = "com.fsck.k9.intent.action.EMAIL_DELETED";
+            public static final String ACTION_REFRESH_OBSERVER  = "com.fsck.k9.intent.action.REFRESH_OBSERVER";
             public static final String EXTRA_ACCOUNT            = "com.fsck.k9.intent.extra.ACCOUNT";
             public static final String EXTRA_FOLDER             = "com.fsck.k9.intent.extra.FOLDER";
             public static final String EXTRA_SENT_DATE          = "com.fsck.k9.intent.extra.SENT_DATE";
@@ -272,14 +307,109 @@ public class K9 extends Application
      */
     public static void setServicesEnabled(Context context)
     {
-        int acctLength = Preferences.getPreferences(context).getAccounts().length;
+        int acctLength = Preferences.getPreferences(context).getAvailableAccounts().size();
 
         /* setServicesEnabled(context, acctLength > 0, null); */
     }
 
     public static void setServicesEnabled(Context context, Integer wakeLockId)
     {
-        /* setServicesEnabled(context, Preferences.getPreferences(context).getAccounts().length > 0, wakeLockId); */
+      /*
+        setServicesEnabled(context, Preferences.getPreferences(context).getAvailableAccounts().size() > 0, wakeLockId);
+      */
+    }
+
+    public static void setServicesEnabled(Context context, boolean enabled, Integer wakeLockId)
+    {
+
+        PackageManager pm = context.getPackageManager();
+
+        if (!enabled && pm.getComponentEnabledSetting(new ComponentName(context, MailService.class)) ==
+                PackageManager.COMPONENT_ENABLED_STATE_ENABLED)
+        {
+            /*
+             * If no accounts now exist but the service is still enabled we're about to disable it
+             * so we'll reschedule to kill off any existing alarms.
+             */
+            MailService.actionReset(context, wakeLockId);
+        }
+        Class<?>[] classes = { MessageCompose.class, BootReceiver.class, MailService.class };
+
+        for (Class<?> clazz : classes)
+        {
+
+            boolean alreadyEnabled = pm.getComponentEnabledSetting(new ComponentName(context, clazz)) ==
+                                     PackageManager.COMPONENT_ENABLED_STATE_ENABLED;
+
+            if (enabled != alreadyEnabled)
+            {
+                pm.setComponentEnabledSetting(
+                    new ComponentName(context, clazz),
+                    enabled ? PackageManager.COMPONENT_ENABLED_STATE_ENABLED :
+                    PackageManager.COMPONENT_ENABLED_STATE_DISABLED,
+                    PackageManager.DONT_KILL_APP);
+            }
+        }
+
+        if (enabled && pm.getComponentEnabledSetting(new ComponentName(context, MailService.class)) ==
+                PackageManager.COMPONENT_ENABLED_STATE_ENABLED)
+        {
+            /*
+             * And now if accounts do exist then we've just enabled the service and we want to
+             * schedule alarms for the new accounts.
+             */
+            MailService.actionReset(context, wakeLockId);
+        }
+    }
+
+    /**
+     * Register BroadcastReceivers programmaticaly because doing it from manifest
+     * would make K-9 auto-start. We don't want auto-start because the initialization
+     * sequence isn't safe while some events occur (SD card unmount).
+     */
+    protected void registerReceivers()
+    {
+        final StorageGoneReceiver receiver = new StorageGoneReceiver();
+        final IntentFilter filter = new IntentFilter();
+        filter.addAction(Intent.ACTION_MEDIA_EJECT);
+        filter.addAction(Intent.ACTION_MEDIA_UNMOUNTED);
+        filter.addDataScheme("file");
+
+        final BlockingQueue<Handler> queue = new SynchronousQueue<Handler>();
+
+        // starting a new thread to handle unmount events
+        new Thread(new Runnable()
+        {
+            @Override
+            public void run()
+            {
+                Looper.prepare();
+                try
+                {
+                    queue.put(new Handler());
+                }
+                catch (InterruptedException e)
+                {
+                    Log.e(K9.LOG_TAG, "", e);
+                }
+                Looper.loop();
+            }
+
+        }, "Unmount-thread").start();
+
+        try
+        {
+            final Handler storageGoneHandler = queue.take();
+            registerReceiver(receiver, filter, null, storageGoneHandler);
+            Log.i(K9.LOG_TAG, "Registered: unmount receiver");
+        }
+        catch (InterruptedException e)
+        {
+            Log.e(K9.LOG_TAG, "Unable to register unmount receiver", e);
+        }
+
+        registerReceiver(new ShutdownReceiver(), new IntentFilter(Intent.ACTION_SHUTDOWN));
+        Log.i(K9.LOG_TAG, "Registered: shutdown receiver");
     }
 
     public static void save(SharedPreferences.Editor editor)
@@ -289,20 +419,36 @@ public class K9 extends Application
         editor.putString("backgroundOperations", K9.backgroundOps.toString());
         editor.putBoolean("animations", mAnimations);
         editor.putBoolean("gesturesEnabled", mGesturesEnabled);
+        editor.putBoolean("useVolumeKeysForNavigation", mUseVolumeKeysForNavigation);
+        editor.putBoolean("useVolumeKeysForListNavigation", mUseVolumeKeysForListNavigation);
         editor.putBoolean("manageBack", mManageBack);
+        editor.putBoolean("zoomControlsEnabled",mZoomControlsEnabled);
+        editor.putBoolean("mobileOptimizedLayout", mMobileOptimizedLayout);
+        editor.putBoolean("quietTimeEnabled", mQuietTimeEnabled);
+        editor.putString("quietTimeStarts", mQuietTimeStarts);
+        editor.putString("quietTimeEnds", mQuietTimeEnds);
+
         editor.putBoolean("startIntegratedInbox", mStartIntegratedInbox);
         editor.putBoolean("measureAccounts", mMeasureAccounts);
         editor.putBoolean("countSearchMessages", mCountSearchMessages);
         editor.putBoolean("messageListStars",mMessageListStars);
         editor.putBoolean("messageListCheckboxes",mMessageListCheckboxes);
         editor.putBoolean("messageListTouchable",mMessageListTouchable);
+        editor.putInt("messageListPreviewLines",mMessageListPreviewLines);
 
+        editor.putBoolean("showContactName",mShowContactName);
+        editor.putBoolean("changeRegisteredNameColor",mChangeContactNameColor);
+        editor.putInt("registeredNameColor",mContactNameColor);
         editor.putBoolean("messageViewFixedWidthFont",mMessageViewFixedWidthFont);
         editor.putBoolean("messageViewReturnToList", mMessageViewReturnToList);
 
         editor.putString("language", language);
         editor.putInt("theme", theme);
         editor.putBoolean("useGalleryBugWorkaround", useGalleryBugWorkaround);
+
+        editor.putBoolean("confirmDelete", mConfirmDelete);
+
+        editor.putBoolean("keyguardPrivacy", mKeyguardPrivacy);
 
         fontSizes.save(editor);
     }
@@ -321,6 +467,8 @@ public class K9 extends Application
         DEBUG_SENSITIVE = sprefs.getBoolean("enableSensitiveLogging", false);
         mAnimations = sprefs.getBoolean("animations", true);
         mGesturesEnabled = sprefs.getBoolean("gesturesEnabled", true);
+        mUseVolumeKeysForNavigation = sprefs.getBoolean("useVolumeKeysForNavigation", false);
+        mUseVolumeKeysForListNavigation = sprefs.getBoolean("useVolumeKeysForListNavigation", false);
         mManageBack = sprefs.getBoolean("manageBack", false);
         mStartIntegratedInbox = sprefs.getBoolean("startIntegratedInbox", false);
         mMeasureAccounts = sprefs.getBoolean("measureAccounts", true);
@@ -328,11 +476,26 @@ public class K9 extends Application
         mMessageListStars = sprefs.getBoolean("messageListStars",true);
         mMessageListCheckboxes = sprefs.getBoolean("messageListCheckboxes",false);
         mMessageListTouchable = sprefs.getBoolean("messageListTouchable",false);
+        mMessageListPreviewLines = sprefs.getInt("messageListPreviewLines", 2);
 
+        mMobileOptimizedLayout = sprefs.getBoolean("mobileOptimizedLayout", false);
+        mZoomControlsEnabled = sprefs.getBoolean("zoomControlsEnabled",false);
+
+        mQuietTimeEnabled = sprefs.getBoolean("quietTimeEnabled", false);
+        mQuietTimeStarts = sprefs.getString("quietTimeStarts", "21:00" );
+        mQuietTimeEnds= sprefs.getString("quietTimeEnds", "7:00");
+
+        mShowContactName = sprefs.getBoolean("showContactName", false);
+        mChangeContactNameColor = sprefs.getBoolean("changeRegisteredNameColor", false);
+        mContactNameColor = sprefs.getInt("registeredNameColor", 0xff00008f);
         mMessageViewFixedWidthFont = sprefs.getBoolean("messageViewFixedWidthFont", false);
         mMessageViewReturnToList = sprefs.getBoolean("messageViewReturnToList", false);
 
         useGalleryBugWorkaround = sprefs.getBoolean("useGalleryBugWorkaround", K9.isGalleryBuggy());
+
+        mConfirmDelete = sprefs.getBoolean("confirmDelete", false);
+
+        mKeyguardPrivacy = sprefs.getBoolean("keyguardPrivacy", false);
 
         fontSizes.load(sprefs);
 
@@ -347,7 +510,7 @@ public class K9 extends Application
 
         K9.setK9Language(sprefs.getString("language", ""));
         K9.setK9Theme(sprefs.getInt("theme", android.R.style.Theme_Light));
-        MessagingController.getInstance(this).resetVisibleLimits(prefs.getAccounts());
+        MessagingController.getInstance(this).resetVisibleLimits(prefs.getAvailableAccounts());
 
         /*
          * We have to give MimeMessage a temp directory because File.createTempFile(String, String)
@@ -359,7 +522,10 @@ public class K9 extends Application
          * Enable background sync of messages
          */
 
-        /* setServicesEnabled(this); */
+        /*
+        setServicesEnabled(this);
+        registerReceivers();
+        */
 
         MessagingController.getInstance(this).addListener(new MessagingListener()
         {
@@ -415,9 +581,54 @@ public class K9 extends Application
                 broadcastIntent(K9.Intents.EmailReceived.ACTION_EMAIL_RECEIVED, account, folder, message);
             }
 
+            @Override
+            public void searchStats(final AccountStats stats)
+            {
+                // let observers know a fetch occured
+                K9.this.sendBroadcast(new Intent(K9.Intents.EmailReceived.ACTION_REFRESH_OBSERVER, null));
+            }
 
         });
 
+        notifyObservers();
+    }
+
+    /**
+     * since Android invokes Application.onCreate() only after invoking all
+     * other components' onCreate(), here is a way to notify interested
+     * component that the application is available and ready
+     */
+    protected void notifyObservers()
+    {
+        for (final ApplicationAware aware : observers)
+        {
+            if (K9.DEBUG)
+            {
+                Log.v(K9.LOG_TAG, "Initializing observer: " + aware);
+            }
+            try
+            {
+                aware.initializeComponent(this);
+            }
+            catch (Exception e)
+            {
+                Log.w(K9.LOG_TAG, "Failure when notifying " + aware, e);
+            }
+        }
+    }
+
+    /**
+     * Register a component to be notified when the {@link K9} instance is ready.
+     *
+     * @param component
+     *            Never <code>null</code>.
+     */
+    public static void registerApplicationAware(final ApplicationAware component)
+    {
+        if (!observers.contains(component))
+        {
+            observers.add(component);
+        }
     }
 
     public static String getK9Language()
@@ -467,6 +678,25 @@ public class K9 extends Application
         mGesturesEnabled = gestures;
     }
 
+    public static boolean useVolumeKeysForNavigationEnabled()
+    {
+        return mUseVolumeKeysForNavigation;
+    }
+
+    public static void setUseVolumeKeysForNavigation(boolean volume)
+    {
+        mUseVolumeKeysForNavigation = volume;
+    }
+
+    public static boolean useVolumeKeysForListNavigationEnabled()
+    {
+        return mUseVolumeKeysForListNavigation;
+    }
+
+    public static void setUseVolumeKeysForListNavigation(boolean enabled)
+    {
+        mUseVolumeKeysForListNavigation = enabled;
+    }
 
     public static boolean manageBack()
     {
@@ -477,6 +707,109 @@ public class K9 extends Application
     {
         mManageBack = manageBack;
     }
+
+    public static boolean zoomControlsEnabled()
+    {
+        return mZoomControlsEnabled;
+    }
+
+    public static void setZoomControlsEnabled(boolean zoomControlsEnabled)
+    {
+        mZoomControlsEnabled = zoomControlsEnabled;
+    }
+
+
+    public static boolean mobileOptimizedLayout()
+    {
+        return mMobileOptimizedLayout;
+    }
+
+    public static void setMobileOptimizedLayout(boolean mobileOptimizedLayout)
+    {
+        mMobileOptimizedLayout = mobileOptimizedLayout;
+    }
+
+    public static boolean getQuietTimeEnabled()
+    {
+        return mQuietTimeEnabled;
+    }
+
+    public static void setQuietTimeEnabled(boolean quietTimeEnabled)
+    {
+        mQuietTimeEnabled = quietTimeEnabled;
+    }
+
+    public static String getQuietTimeStarts()
+    {
+        return mQuietTimeStarts;
+    }
+
+    public static void setQuietTimeStarts(String quietTimeStarts)
+    {
+        mQuietTimeStarts = quietTimeStarts;
+    }
+
+    public static String getQuietTimeEnds()
+    {
+        return mQuietTimeEnds;
+    }
+
+    public static void setQuietTimeEnds(String quietTimeEnds)
+    {
+        mQuietTimeEnds = quietTimeEnds;
+    }
+
+
+    public static boolean isQuietTime()
+    {
+        if (!mQuietTimeEnabled)
+        {
+            return false;
+        }
+
+        Time time = new Time();
+        time.setToNow();
+        Integer startHour = Integer.parseInt(mQuietTimeStarts.split(":")[0]);
+        Integer startMinute = Integer.parseInt(mQuietTimeStarts.split(":")[1]);
+        Integer endHour = Integer.parseInt(mQuietTimeEnds.split(":")[0]);
+        Integer endMinute = Integer.parseInt(mQuietTimeEnds.split(":")[1]);
+
+        Integer now = (time.hour * 60 ) + time.minute;
+        Integer quietStarts = startHour * 60 + startMinute;
+        Integer quietEnds =  endHour * 60 +endMinute;
+
+        // If start and end times are the same, we're never quiet
+        if (quietStarts.equals(quietEnds))
+        {
+            return false;
+        }
+
+
+        // 21:00 - 05:00 means we want to be quiet if it's after 9 or before 5
+        if (quietStarts > quietEnds)
+        {
+            // if it's 22:00 or 03:00 but not 8:00
+            if ( now >= quietStarts || now <= quietEnds)
+            {
+                return true;
+            }
+        }
+
+        // 01:00 - 05:00
+        else
+        {
+
+            // if it' 2:00 or 4:00 but not 8:00 or 0:00
+            if ( now >= quietStarts && now <= quietEnds)
+            {
+                return true;
+            }
+        }
+
+        return false;
+    }
+
+
 
     public static boolean startIntegratedInbox()
     {
@@ -508,6 +841,16 @@ public class K9 extends Application
         mMessageListTouchable = touchy;
     }
 
+    public static int messageListPreviewLines()
+    {
+        return mMessageListPreviewLines;
+    }
+
+    public static void setMessageListPreviewLines(int lines)
+    {
+        mMessageListPreviewLines = lines;
+    }
+
     public static boolean messageListStars()
     {
         return mMessageListStars;
@@ -527,6 +870,35 @@ public class K9 extends Application
         mMessageListCheckboxes = checkboxes;
     }
 
+    public static boolean showContactName()
+    {
+        return mShowContactName;
+    }
+
+    public static void setShowContactName(boolean showContactName)
+    {
+        mShowContactName = showContactName;
+    }
+
+    public static boolean changeContactNameColor()
+    {
+        return mChangeContactNameColor;
+    }
+
+    public static void setChangeContactNameColor(boolean changeContactNameColor)
+    {
+        mChangeContactNameColor = changeContactNameColor;
+    }
+
+    public static int getContactNameColor()
+    {
+        return mContactNameColor;
+    }
+
+    public static void setContactNameColor(int contactNameColor)
+    {
+        mContactNameColor = contactNameColor;
+    }
 
     public static boolean messageViewFixedWidthFont()
     {
@@ -623,6 +995,29 @@ public class K9 extends Application
         return galleryBuggy;
     }
 
+    public static boolean confirmDelete()
+    {
+        return mConfirmDelete;
+    }
+
+    public static void setConfirmDelete(final boolean confirm)
+    {
+        mConfirmDelete = confirm;
+    }
+
+    /**
+     * @return Whether privacy rules should be applied when system is locked
+     */
+    public static boolean keyguardPrivacy()
+    {
+        return mKeyguardPrivacy;
+    }
+
+    public static void setKeyguardPrivacy(final boolean state)
+    {
+        mKeyguardPrivacy = state;
+    }
+
     /**
      * Check if this system contains a buggy Gallery 3D package.
      *
@@ -645,4 +1040,5 @@ public class K9 extends Application
             return false;
         }
     }
+
 }

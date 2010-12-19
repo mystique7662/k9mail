@@ -2,48 +2,54 @@ package com.fsck.k9.activity;
 
 import java.util.ArrayList;
 import java.util.Collections;
-import java.util.Date;
+import java.util.Comparator;
+import java.util.EnumMap;
+import java.util.Iterator;
 import java.util.List;
-import java.util.regex.Matcher;
-import java.util.regex.Pattern;
+import java.util.Map;
 
 import android.app.AlertDialog;
 import android.app.Dialog;
 import android.content.Context;
 import android.content.DialogInterface;
 import android.content.Intent;
+import android.graphics.Color;
 import android.graphics.Typeface;
 import android.graphics.drawable.Drawable;
 import android.os.Bundle;
 import android.text.Spannable;
-import android.text.style.TextAppearanceSpan;
-import android.util.Config;
+import android.text.SpannableStringBuilder;
+import android.text.style.ForegroundColorSpan;
+import android.text.style.StyleSpan;
 import android.util.Log;
 import android.util.TypedValue;
+import android.view.animation.Animation;
+import android.view.animation.AnimationUtils;
+import android.view.animation.Animation.AnimationListener;
 import android.view.ContextMenu;
-import android.view.ContextMenu.ContextMenuInfo;
 import android.view.GestureDetector;
-import android.view.GestureDetector.SimpleOnGestureListener;
 import android.view.KeyEvent;
 import android.view.LayoutInflater;
 import android.view.Menu;
 import android.view.MenuItem;
 import android.view.MotionEvent;
 import android.view.View;
-import android.view.View.OnClickListener;
 import android.view.ViewGroup;
 import android.view.Window;
+import android.view.ContextMenu.ContextMenuInfo;
+import android.view.GestureDetector.SimpleOnGestureListener;
+import android.view.View.OnClickListener;
 import android.widget.AdapterView;
-import android.widget.AdapterView.AdapterContextMenuInfo;
 import android.widget.BaseAdapter;
 import android.widget.CheckBox;
 import android.widget.CompoundButton;
-import android.widget.CompoundButton.OnCheckedChangeListener;
 import android.widget.ImageButton;
 import android.widget.ListView;
 import android.widget.ProgressBar;
 import android.widget.TextView;
 import android.widget.Toast;
+import android.widget.AdapterView.AdapterContextMenuInfo;
+import android.widget.CompoundButton.OnCheckedChangeListener;
 
 import com.fsck.k9.Account;
 import com.fsck.k9.AccountStats;
@@ -56,19 +62,18 @@ import com.fsck.k9.activity.setup.AccountSettings;
 import com.fsck.k9.activity.setup.FolderSettings;
 import com.fsck.k9.activity.setup.Prefs;
 import com.fsck.k9.controller.MessagingController;
-import com.fsck.k9.controller.MessagingController.SORT_TYPE;
 import com.fsck.k9.controller.MessagingListener;
+import com.fsck.k9.controller.MessagingController.SORT_TYPE;
+import com.fsck.k9.helper.MessageHelper;
 import com.fsck.k9.helper.Utility;
-import com.fsck.k9.mail.Address;
 import com.fsck.k9.mail.Flag;
 import com.fsck.k9.mail.Folder;
 import com.fsck.k9.mail.Message;
-import com.fsck.k9.mail.Message.RecipientType;
 import com.fsck.k9.mail.MessagingException;
 import com.fsck.k9.mail.store.LocalStore;
+import com.fsck.k9.mail.store.StorageManager;
 import com.fsck.k9.mail.store.LocalStore.LocalFolder;
 import com.fsck.k9.mail.store.LocalStore.LocalMessage;
-
 
 /**
  * MessageList is the primary user interface for the program. This Activity
@@ -76,9 +81,147 @@ import com.fsck.k9.mail.store.LocalStore.LocalMessage;
  * From this Activity the user can perform all standard message operations.
  */
 public class MessageList
-        extends K9Activity
-        implements OnClickListener, AdapterView.OnItemClickListener
+    extends K9Activity
+    implements OnClickListener, AdapterView.OnItemClickListener, AnimationListener
 {
+
+    /**
+     * Reverses the result of a {@link Comparator}.
+     *
+     * @param <T>
+     */
+    public static class ReverseComparator<T> implements Comparator<T>
+    {
+        private Comparator<T> mDelegate;
+
+        /**
+         * @param delegate
+         *            Never <code>null</code>.
+         */
+        public ReverseComparator(final Comparator<T> delegate)
+        {
+            mDelegate = delegate;
+        }
+
+        @Override
+        public int compare(final T object1, final T object2)
+        {
+            // arg1 & 2 are mixed up, this is done on purpose
+            return mDelegate.compare(object2, object1);
+        }
+
+    }
+
+    /**
+     * Chains comparator to find a non-0 result.
+     *
+     * @param <T>
+     */
+    public static class ComparatorChain<T> implements Comparator<T>
+    {
+
+        private List<Comparator<T>> mChain;
+
+        /**
+         * @param chain
+         *            Comparator chain. Never <code>null</code>.
+         */
+        public ComparatorChain(final List<Comparator<T>> chain)
+        {
+            mChain = chain;
+        }
+
+        @Override
+        public int compare(T object1, T object2)
+        {
+            int result = 0;
+            for (final Comparator<T> comparator : mChain)
+            {
+                result = comparator.compare(object1, object2);
+                if (result != 0)
+                {
+                    break;
+                }
+            }
+            return result;
+        }
+
+    }
+
+    public static class AttachmentComparator implements Comparator<MessageInfoHolder>
+    {
+
+        @Override
+        public int compare(MessageInfoHolder object1, MessageInfoHolder object2)
+        {
+            return (object1.message.hasAttachments() ? 0 : 1) - (object2.message.hasAttachments() ? 0 : 1);
+        }
+
+    }
+
+    public static class FlaggedComparator implements Comparator<MessageInfoHolder>
+    {
+
+        @Override
+        public int compare(MessageInfoHolder object1, MessageInfoHolder object2)
+        {
+            return (object1.flagged ? 0 : 1) - (object2.flagged ? 0 : 1);
+        }
+
+    }
+
+    public static class UnreadComparator implements Comparator<MessageInfoHolder>
+    {
+
+        @Override
+        public int compare(MessageInfoHolder object1, MessageInfoHolder object2)
+        {
+            return (object1.read ? 1 : 0) - (object2.read ? 1 : 0);
+        }
+
+    }
+
+    public static class SenderComparator implements Comparator<MessageInfoHolder>
+    {
+
+        @Override
+        public int compare(MessageInfoHolder object1, MessageInfoHolder object2)
+        {
+            return object1.compareCounterparty.toLowerCase().compareTo(object2.compareCounterparty.toLowerCase());
+        }
+
+    }
+
+    public static class DateComparator implements Comparator<MessageInfoHolder>
+    {
+
+        @Override
+        public int compare(MessageInfoHolder object1, MessageInfoHolder object2)
+        {
+            return object1.compareDate.compareTo(object2.compareDate);
+        }
+
+    }
+
+    public static class SubjectComparator implements Comparator<MessageInfoHolder>
+    {
+
+        @Override
+        public int compare(MessageInfoHolder arg0, MessageInfoHolder arg1)
+        {
+            // XXX doesn't respect the Comparator contract since it alters the compared object
+            if (arg0.compareSubject == null)
+            {
+                arg0.compareSubject = Utility.stripSubject(arg0.message.getSubject());
+            }
+            if (arg1.compareSubject == null)
+            {
+                arg1.compareSubject = Utility.stripSubject(arg1.message.getSubject());
+            }
+            return arg0.compareSubject.compareToIgnoreCase(arg1.compareSubject);
+        }
+
+    }
 
     /**
      * Immutable empty {@link Message} array
@@ -103,9 +246,32 @@ public class MessageList
     private static final String EXTRA_TITLE = "title";
     private static final String EXTRA_LIST_POSITION = "listPosition";
 
+    /**
+     * Maps a {@link SORT_TYPE} to a {@link Comparator} implementation.
+     */
+    private static final Map<SORT_TYPE, Comparator<MessageInfoHolder>> SORT_COMPARATORS;
+
+    static
+    {
+        // fill the mapping at class time loading
+
+        final Map<SORT_TYPE, Comparator<MessageInfoHolder>> map = new EnumMap<SORT_TYPE, Comparator<MessageInfoHolder>>(SORT_TYPE.class);
+        map.put(SORT_TYPE.SORT_ATTACHMENT, new AttachmentComparator());
+        map.put(SORT_TYPE.SORT_DATE, new DateComparator());
+        map.put(SORT_TYPE.SORT_FLAGGED, new FlaggedComparator());
+        map.put(SORT_TYPE.SORT_SENDER, new SenderComparator());
+        map.put(SORT_TYPE.SORT_SUBJECT, new SubjectComparator());
+        map.put(SORT_TYPE.SORT_UNREAD, new UnreadComparator());
+
+        // make it immutable to prevent accidental alteration (content is immutable already)
+        SORT_COMPARATORS = Collections.unmodifiableMap(map);
+    }
+
     private ListView mListView;
 
     private boolean mTouchView = true;
+    private int mPreviewLines = 0;
+
 
     private MessageListAdapter mAdapter;
 
@@ -159,6 +325,38 @@ public class MessageList
     private Bundle mState = null;
     private MessageInfoHolder mSelectedMessage = null;
 
+    private Context context = null;
+
+    /* package visibility for faster inner class access */
+    MessageHelper mMessageHelper = MessageHelper.getInstance(this);
+
+    private StorageManager.StorageListener mStorageListener = new StorageListenerImplementation();
+
+    private final class StorageListenerImplementation implements StorageManager.StorageListener
+    {
+        @Override
+        public void onUnmount(String providerId)
+        {
+            if (mAccount != null && providerId.equals(mAccount.getLocalStorageProviderId()))
+            {
+                runOnUiThread(new Runnable()
+                {
+                    @Override
+                    public void run()
+                    {
+                        onAccountUnavailable();
+                    }
+                });
+            }
+        }
+
+        @Override
+        public void onMount(String providerId)
+        {
+            // no-op
+        }
+    }
+
     class MessageListHandler
     {
         public void removeMessage(final List<MessageInfoHolder> messages)
@@ -203,7 +401,7 @@ public class MessageList
                             int index;
                             synchronized (mAdapter.messages)
                             {
-                                index = Collections.binarySearch(mAdapter.messages, message);
+                                index = Collections.binarySearch(mAdapter.messages, message, getComparator());
                             }
 
                             if (index < 0)
@@ -256,17 +454,62 @@ public class MessageList
 
         private void sortMessages()
         {
+            final Comparator<MessageInfoHolder> chainComparator = getComparator();
+
             runOnUiThread(new Runnable()
             {
                 public void run()
                 {
                     synchronized (mAdapter.messages)
                     {
-                        Collections.sort(mAdapter.messages);
+                        Collections.sort(mAdapter.messages, chainComparator);
                     }
                     mAdapter.notifyDataSetChanged();
                 }
             });
+        }
+
+        /**
+         * @return The comparator to use to display messages in an ordered
+         *         fashion. Never <code>null</code>.
+         */
+        protected Comparator<MessageInfoHolder> getComparator()
+        {
+            final List<Comparator<MessageInfoHolder>> chain = new ArrayList<Comparator<MessageInfoHolder>>(2 /* we add 2 comparators at most */ );
+
+            {
+                // add the specified comparator
+                final Comparator<MessageInfoHolder> comparator = SORT_COMPARATORS.get(sortType);
+                if (sortAscending)
+                {
+                    chain.add(comparator);
+                }
+                else
+                {
+                    chain.add(new ReverseComparator<MessageInfoHolder>(comparator));
+                }
+            }
+
+            {
+                // add the date comparator if not already specified
+                if (sortType != SORT_TYPE.SORT_DATE)
+                {
+                    final Comparator<MessageInfoHolder> comparator = SORT_COMPARATORS.get(SORT_TYPE.SORT_DATE);
+                    if (sortDateAscending)
+                    {
+                        chain.add(comparator);
+                    }
+                    else
+                    {
+                        chain.add(new ReverseComparator<MessageInfoHolder>(comparator));
+                    }
+                }
+            }
+
+            // build the comparator chain
+            final Comparator<MessageInfoHolder> chainComparator = new ComparatorChain<MessageInfoHolder>(chain);
+
+            return chainComparator;
         }
 
         public void folderLoading(String folder, boolean loading)
@@ -300,10 +543,14 @@ public class MessageList
 
             if (mCurrentFolder != null && mCurrentFolder.loading && mAdapter.mListener.getFolderTotal() > 0)
             {
-                level = (Window.PROGRESS_END / mAdapter.mListener.getFolderTotal()) * (mAdapter.mListener.getFolderCompleted()) ;
-                if (level > Window.PROGRESS_END)
+                int divisor = mAdapter.mListener.getFolderTotal();
+                if (divisor != 0)
                 {
-                    level = Window.PROGRESS_END;
+                    level = (Window.PROGRESS_END / divisor) * (mAdapter.mListener.getFolderCompleted()) ;
+                    if (level > Window.PROGRESS_END)
+                    {
+                        level = Window.PROGRESS_END;
+                    }
                 }
             }
 
@@ -421,19 +668,19 @@ public class MessageList
             // In multiselect mode make sure that clicking on the item results
             // in toggling the 'selected' checkbox.
             setSelected(message, !message.selected);
-            return;
         }
         else
         {
             onOpenMessage(message);
-            return;
         }
     }
 
     @Override
     public void onCreate(Bundle savedInstanceState)
     {
+        context=this;
         super.onCreate(savedInstanceState);
+
         mInflater = getLayoutInflater();
         initializeLayout();
         onNewIntent(getIntent());
@@ -447,11 +694,19 @@ public class MessageList
         // Only set "touchable" when we're first starting up the activity.
         // Otherwise we get force closes when the user toggles it midstream.
         mTouchView = K9.messageListTouchable();
+        mPreviewLines = K9.messageListPreviewLines();
 
         String accountUuid = intent.getStringExtra(EXTRA_ACCOUNT);
         mAccount = Preferences.getPreferences(this).getAccount(accountUuid);
         mFolderName = intent.getStringExtra(EXTRA_FOLDER);
         mQueryString = intent.getStringExtra(EXTRA_QUERY);
+
+        if (mAccount != null && !mAccount.isAvailable(this))
+        {
+            Log.i(K9.LOG_TAG, "not opening MessageList of unavailable account");
+            onAccountUnavailable();
+            return;
+        }
 
         String queryFlags = intent.getStringExtra(EXTRA_QUERY_FLAGS);
         if (queryFlags != null)
@@ -509,6 +764,8 @@ public class MessageList
         super.onPause();
         mController.removeListener(mAdapter.mListener);
         saveListState();
+
+        StorageManager.getInstance(getApplication()).removeListener(mStorageListener);
     }
 
     public void saveListState()
@@ -551,6 +808,13 @@ public class MessageList
     {
         super.onResume();
 
+        if (mAccount != null && !mAccount.isAvailable(this))
+        {
+            onAccountUnavailable();
+            return;
+        }
+        StorageManager.getInstance(getApplication()).addListener(mStorageListener);
+
         mStars = K9.messageListStars();
         mCheckboxes = K9.messageListCheckboxes();
 
@@ -559,28 +823,65 @@ public class MessageList
         sortDateAscending = mController.isSortAscending(SORT_TYPE.SORT_DATE);
 
         mController.addListener(mAdapter.mListener);
-        mAdapter.messages.clear();
-        mAdapter.notifyDataSetChanged();
-
-        if (mFolderName != null)
+        if (mAccount != null)
         {
-            mController.listLocalMessages(mAccount, mFolderName,  mAdapter.mListener);
             mController.notifyAccountCancel(this, mAccount);
-
             MessagingController.getInstance(getApplication()).notifyAccountCancel(this, mAccount);
+        }
 
+        if (mAdapter.messages.isEmpty())
+        {
+            if (mFolderName != null)
+            {
+                mController.listLocalMessages(mAccount, mFolderName,  mAdapter.mListener);
+            }
+            else if (mQueryString != null)
+            {
+                mController.searchLocalMessages(mAccountUuids, mFolderNames, null, mQueryString, mIntegrate, mQueryFlags, mForbiddenFlags, mAdapter.mListener);
+            }
+
+        }
+        else
+        {
+            new Thread()
+            {
+                @Override
+                public void run()
+                {
+                    mAdapter.markAllMessagesAsDirty();
+
+                    if (mFolderName != null)
+                    {
+                        mController.listLocalMessagesSynchronous(mAccount, mFolderName,  mAdapter.mListener);
+                    }
+                    else if (mQueryString != null)
+                    {
+                        mController.searchLocalMessagesSynchronous(mAccountUuids, mFolderNames, null, mQueryString, mIntegrate, mQueryFlags, mForbiddenFlags, mAdapter.mListener);
+                    }
+
+
+                    mAdapter.pruneDirtyMessages();
+                    runOnUiThread(new Runnable()
+                    {
+                        public void run()
+                        {
+                            mAdapter.notifyDataSetChanged();
+                            restoreListState();
+                        }
+                    });
+                }
+
+            }
+            .start();
+        }
+
+        if (mAccount != null && mFolderName != null)
+        {
             mController.getFolderUnreadMessageCount(mAccount, mFolderName, mAdapter.mListener);
         }
-        else if (mQueryString != null)
-        {
-            mController.searchLocalMessages(mAccountUuids, mFolderNames, null, mQueryString, mIntegrate, mQueryFlags, mForbiddenFlags, mAdapter.mListener);
-        }
-
         mHandler.refreshTitle();
 
-        restoreListState();
     }
-
     private void initializeLayout()
     {
         requestWindowFeature(Window.FEATURE_INDETERMINATE_PROGRESS);
@@ -672,6 +973,45 @@ public class MessageList
         // Shortcuts that work no matter what is selected
         switch (keyCode)
         {
+
+                // messagelist is actually a K9Activity, not a K9ListActivity
+                // This saddens me greatly, but to support volume key navigation
+                // in MessageView, we implement this bit of wrapper code
+            case KeyEvent.KEYCODE_VOLUME_UP:
+            {
+                if (K9.useVolumeKeysForListNavigationEnabled())
+                {
+                    int currentPosition = mListView.getSelectedItemPosition();
+                    if (currentPosition == AdapterView.INVALID_POSITION || mListView.isInTouchMode())
+                    {
+                        currentPosition = mListView.getFirstVisiblePosition();
+                    }
+                    if (currentPosition > 0)
+                    {
+                        mListView.setSelection(currentPosition - 1);
+                    }
+                    return true;
+                }
+                return false;
+            }
+            case KeyEvent.KEYCODE_VOLUME_DOWN:
+            {
+                if (K9.useVolumeKeysForListNavigationEnabled())
+                {
+                    int currentPosition = mListView.getSelectedItemPosition();
+                    if (currentPosition == AdapterView.INVALID_POSITION || mListView.isInTouchMode())
+                    {
+                        currentPosition = mListView.getFirstVisiblePosition();
+                    }
+
+                    if (currentPosition < mListView.getCount())
+                    {
+                        mListView.setSelection(currentPosition + 1);
+                    }
+                    return true;
+                }
+                return false;
+            }
             case KeyEvent.KEYCODE_DPAD_LEFT:
             {
                 if (mBatchButtonArea.hasFocus())
@@ -722,7 +1062,6 @@ public class MessageList
             }
         }
 
-        boolean result;
         int position = mListView.getSelectedItemPosition();
         try
         {
@@ -795,10 +1134,31 @@ public class MessageList
         }
         finally
         {
-            result = super.onKeyDown(keyCode, event);
+            return super.onKeyDown(keyCode, event);
         }
 
-        return result;
+    }
+
+    @Override
+    public boolean onKeyUp(int keyCode, KeyEvent event)
+    {
+        // Swallow these events too to avoid the audible notification of a volume change
+        if (K9.useVolumeKeysForListNavigationEnabled())
+        {
+            if ((keyCode == KeyEvent.KEYCODE_VOLUME_UP) || (keyCode == KeyEvent.KEYCODE_VOLUME_DOWN))
+            {
+                if (K9.DEBUG)
+                    Log.v(K9.LOG_TAG, "Swallowed key up.");
+                return true;
+            }
+        }
+        return super.onKeyUp(keyCode,event);
+    }
+
+
+    private void onResendMessage(MessageInfoHolder message)
+    {
+        MessageCompose.actionEditDraft(this, message.message.getFolder().getAccount(), message.message);
     }
 
     private void onOpenMessage(MessageInfoHolder message)
@@ -945,12 +1305,12 @@ public class MessageList
 
     private void onMove(MessageInfoHolder holder)
     {
-        if (mController.isMoveCapable(holder.message.getFolder().getAccount()) == false)
+        if (!mController.isMoveCapable(holder.message.getFolder().getAccount()))
         {
             return;
         }
 
-        if (mController.isMoveCapable(holder.message) == false)
+        if (!mController.isMoveCapable(holder.message))
         {
             Toast toast = Toast.makeText(this, R.string.move_copy_cannot_copy_unsynced_message, Toast.LENGTH_LONG);
             toast.show();
@@ -969,12 +1329,12 @@ public class MessageList
 
     private void onArchive(MessageInfoHolder holder)
     {
-        if (mController.isMoveCapable(holder.message.getFolder().getAccount()) == false)
+        if (!mController.isMoveCapable(holder.message.getFolder().getAccount()))
         {
             return;
         }
 
-        if (mController.isMoveCapable(holder.message) == false)
+        if (!mController.isMoveCapable(holder.message))
         {
             Toast toast = Toast.makeText(this, R.string.move_copy_cannot_copy_unsynced_message, Toast.LENGTH_LONG);
             toast.show();
@@ -986,12 +1346,12 @@ public class MessageList
 
     private void onSpam(MessageInfoHolder holder)
     {
-        if (mController.isMoveCapable(holder.message.getFolder().getAccount()) == false)
+        if (!mController.isMoveCapable(holder.message.getFolder().getAccount()))
         {
             return;
         }
 
-        if (mController.isMoveCapable(holder.message) == false)
+        if (!mController.isMoveCapable(holder.message))
         {
             Toast toast = Toast.makeText(this, R.string.move_copy_cannot_copy_unsynced_message, Toast.LENGTH_LONG);
             toast.show();
@@ -1003,12 +1363,12 @@ public class MessageList
 
     private void onCopy(MessageInfoHolder holder)
     {
-        if (mController.isCopyCapable(holder.message.getFolder().getAccount()) == false)
+        if (!mController.isCopyCapable(holder.message.getFolder().getAccount()))
         {
             return;
         }
 
-        if (mController.isCopyCapable(holder.message) == false)
+        if (!mController.isCopyCapable(holder.message))
         {
             Toast toast = Toast.makeText(this, R.string.move_copy_cannot_copy_unsynced_message, Toast.LENGTH_LONG);
             toast.show();
@@ -1087,7 +1447,7 @@ public class MessageList
 
     private void onMoveChosen(MessageInfoHolder holder, String folderName)
     {
-        if (mController.isMoveCapable(holder.message.getFolder().getAccount()) == true && folderName != null)
+        if (mController.isMoveCapable(holder.message.getFolder().getAccount()) && folderName != null)
         {
             if (K9.FOLDER_NONE.equalsIgnoreCase(folderName))
             {
@@ -1100,7 +1460,7 @@ public class MessageList
 
     private void onCopyChosen(MessageInfoHolder holder, String folderName)
     {
-        if (mController.isCopyCapable(holder.message.getFolder().getAccount()) == true && folderName != null)
+        if (mController.isCopyCapable(holder.message.getFolder().getAccount()) && folderName != null)
         {
             mController.copyMessage(holder.message.getFolder().getAccount(),
                                     holder.message.getFolder().getName(), holder.message, folderName, null);
@@ -1223,11 +1583,6 @@ public class MessageList
     private void checkMail(Account account, String folderName)
     {
         mController.synchronizeMailbox(account, folderName, mAdapter.mListener, null);
-        sendMail(account);
-    }
-
-    private void sendMail(Account account)
-    {
         mController.sendPendingMessages(account, mAdapter.mListener);
     }
 
@@ -1315,18 +1670,6 @@ public class MessageList
                 flagSelected(Flag.FLAGGED, false);
                 return true;
             }
-            case R.id.settings:
-            {
-                if (mQueryString == null)
-                {
-                    break;
-                }
-
-                /*
-                 * Fall-through in search results view. Otherwise a sub-menu
-                 * with only one option would be opened.
-                 */
-            }
             case R.id.app_settings:
             {
                 onEditPrefs();
@@ -1353,7 +1696,7 @@ public class MessageList
             }
             case R.id.send_messages:
             {
-                sendMail(mAccount);
+                mController.sendPendingMessages(mAccount, mAdapter.mListener);
                 return true;
             }
             case R.id.list_folders:
@@ -1453,10 +1796,12 @@ public class MessageList
             menu.findItem(R.id.batch_copy_op).setVisible(false);
             menu.findItem(R.id.check_mail).setVisible(false);
             menu.findItem(R.id.send_messages).setVisible(false);
+            menu.findItem(R.id.folder_settings).setVisible(false);
+            menu.findItem(R.id.account_settings).setVisible(false);
         }
         else
         {
-            if (mCurrentFolder != null && mCurrentFolder.outbox)
+            if (mCurrentFolder != null && mCurrentFolder.name.equals(mAccount.getOutboxFolderName()))
             {
                 menu.findItem(R.id.check_mail).setVisible(false);
             }
@@ -1549,6 +1894,12 @@ public class MessageList
                 onForward(holder);
                 break;
             }
+            case R.id.send_again:
+            {
+                onResendMessage(holder);
+                break;
+
+            }
             case R.id.mark_as_read:
             {
                 onToggleRead(holder);
@@ -1587,7 +1938,7 @@ public class MessageList
             case R.id.same_sender:
             {
                 MessageList.actionHandle(MessageList.this,
-                                         "From "+holder.sender, holder.sender, true,
+                                         "From "+holder.sender, holder.senderAddress, true,
                                          null, null);
                 break;
             }
@@ -1629,7 +1980,7 @@ public class MessageList
                 return true;
 
             float deltaX = e2.getX() - e1.getX(),
-                           deltaY = e2.getY() - e1.getY();
+                  deltaY = e2.getY() - e1.getY();
 
             boolean movedAcross = (Math.abs(deltaX) > Math.abs(deltaY * 4));
             boolean steadyHand = (Math.abs(deltaX / deltaY) > 2);
@@ -1675,7 +2026,7 @@ public class MessageList
 
         getMenuInflater().inflate(R.menu.message_list_context, menu);
 
-        menu.setHeaderTitle((CharSequence) message.subject);
+        menu.setHeaderTitle((CharSequence) message.message.getSubject());
 
         if (message.read)
         {
@@ -1688,12 +2039,12 @@ public class MessageList
         }
 
         Account account = message.message.getFolder().getAccount();
-        if (mController.isCopyCapable(account) == false)
+        if (!mController.isCopyCapable(account))
         {
             menu.findItem(R.id.copy).setVisible(false);
         }
 
-        if (mController.isMoveCapable(account) == false)
+        if (!mController.isMoveCapable(account))
         {
             menu.findItem(R.id.move).setVisible(false);
             menu.findItem(R.id.archive).setVisible(false);
@@ -1986,6 +2337,34 @@ public class MessageList
             mAnsweredIcon = getResources().getDrawable(R.drawable.ic_mms_answered_small);
         }
 
+        public void markAllMessagesAsDirty()
+        {
+            for (MessageInfoHolder holder : mAdapter.messages)
+            {
+                holder.dirty = true;
+            }
+        }
+        public void pruneDirtyMessages()
+        {
+            synchronized (mAdapter.messages)
+            {
+                Iterator<MessageInfoHolder> iter = mAdapter.messages.iterator();
+                while (iter.hasNext())
+                {
+                    MessageInfoHolder holder = iter.next();
+                    if (holder.dirty)
+                    {
+                        if (holder.selected)
+                        {
+                            mSelectedCount--;
+                            toggleBatchButtons();
+                        }
+                        mAdapter.removeMessage(holder);
+                    }
+                }
+            }
+        }
+
         public void removeMessages(List<MessageInfoHolder> holders)
         {
             if (holders != null)
@@ -2001,19 +2380,26 @@ public class MessageList
             removeMessages(messages);
         }
 
-        private void addOrUpdateMessage(Account account, String folder, Message message, boolean verifyAgainstSearch)
+        private void addOrUpdateMessage(Account account, String folderName, Message message, boolean verifyAgainstSearch)
         {
             List<Message> messages = new ArrayList<Message>();
             messages.add(message);
-            addOrUpdateMessages(account, folder, messages, verifyAgainstSearch);
+            addOrUpdateMessages(account, folderName, messages, verifyAgainstSearch);
         }
 
-        private void addOrUpdateMessages(Account account, String folder, List<Message> messages, boolean verifyAgainstSearch)
+        private void addOrUpdateMessages(final Account account, final String folderName, final List<Message> providedMessages, final boolean verifyAgainstSearch)
         {
+            // we copy the message list because the callback doesn't expect
+            // the callbacks to mutate it.
+            final List<Message> messages = new ArrayList<Message>(providedMessages);
+
             boolean needsSort = false;
             final List<MessageInfoHolder> messagesToAdd = new ArrayList<MessageInfoHolder>();
             List<MessageInfoHolder> messagesToRemove = new ArrayList<MessageInfoHolder>();
             List<Message> messagesToSearch = new ArrayList<Message>();
+
+            // cache field into local variable for faster access for JVM without JIT
+            final MessageHelper messageHelper = mMessageHelper;
 
             for (Message message : messages)
             {
@@ -2025,33 +2411,41 @@ public class MessageList
                         messagesToRemove.add(m);
                     }
                 }
-                else if (m == null)
+                else
                 {
-                    if (updateForMe(account, folder))
+                    final Folder messageFolder = message.getFolder();
+                    final Account messageAccount = messageFolder.getAccount();
+                    if (m == null)
                     {
-                        m = new MessageInfoHolder(message);
-                        messagesToAdd.add(m);
-                    }
-                    else
-                    {
-                        if (mQueryString != null)
+                        if (updateForMe(account, folderName))
                         {
-                            if (verifyAgainstSearch)
+                            m = new MessageInfoHolder();
+                            messageHelper.populate(m, message, new FolderInfoHolder(MessageList.this, messageFolder, messageAccount), messageAccount);
+                            messagesToAdd.add(m);
+                        }
+                        else
+                        {
+                            if (mQueryString != null)
                             {
-                                messagesToSearch.add(message);
-                            }
-                            else
-                            {
-                                m = new MessageInfoHolder(message);
-                                messagesToAdd.add(m);
+                                if (verifyAgainstSearch)
+                                {
+                                    messagesToSearch.add(message);
+                                }
+                                else
+                                {
+                                    m = new MessageInfoHolder();
+                                    messageHelper.populate(m, message, new FolderInfoHolder(MessageList.this, messageFolder, messageAccount), messageAccount);
+                                    messagesToAdd.add(m);
+                                }
                             }
                         }
                     }
-                }
-                else
-                {
-                    m.populate(message, new FolderInfoHolder(message.getFolder(), account), account);
-                    needsSort = true;
+                    else
+                    {
+                        m.dirty = false; // as we reload the message, unset its dirty flag
+                        messageHelper.populate(m, message, new FolderInfoHolder(MessageList.this, messageFolder, account), account);
+                        needsSort = true;
+                    }
                 }
             }
 
@@ -2084,7 +2478,6 @@ public class MessageList
                 mHandler.resetUnreadCount();
             }
         }
-
         public MessageInfoHolder getMessage(Message message)
         {
             return null; //getMessage(message.makeMessageReference());
@@ -2123,7 +2516,7 @@ public class MessageList
             {
                 LocalStore localStore = account.getLocalStore();
                 local_folder = localStore.getFolder(folder);
-                return new FolderInfoHolder((Folder)local_folder, account);
+                return new FolderInfoHolder(context, (Folder)local_folder, account);
             }
             catch (Exception e)
             {
@@ -2252,12 +2645,12 @@ public class MessageList
 
                 holder.flagged.setOnClickListener(flagClickListener);
 
-                if (mStars == false)
+                if (!mStars)
                 {
                     holder.flagged.setVisibility(View.GONE);
                 }
 
-                if (mCheckboxes == true)
+                if (mCheckboxes)
                 {
                     holder.selected.setVisibility(View.VISIBLE);
                 }
@@ -2265,6 +2658,19 @@ public class MessageList
                 if (holder.selected != null)
                 {
                     holder.selected.setOnCheckedChangeListener(holder);
+                }
+                holder.subject.setTextSize(TypedValue.COMPLEX_UNIT_DIP, mFontSizes.getMessageListSubject());
+                holder.date.setTextSize(TypedValue.COMPLEX_UNIT_DIP, mFontSizes.getMessageListDate());
+
+                if (mTouchView)
+                {
+                    holder.preview.setLines(mPreviewLines);
+                    holder.preview.setTextSize(TypedValue.COMPLEX_UNIT_DIP, mFontSizes.getMessageListSender());
+
+                }
+                else
+                {
+                    holder.from.setTextSize(TypedValue.COMPLEX_UNIT_DIP, mFontSizes.getMessageListSender());
                 }
 
                 view.setTag(holder);
@@ -2276,7 +2682,8 @@ public class MessageList
             }
             else
             {
-                // TODO is this branch ever reached/executed?
+                // This branch code is triggered when the local store
+                // hands us an invalid message
 
                 holder.chip.getBackground().setAlpha(0);
                 holder.subject.setText("No subject");
@@ -2307,24 +2714,13 @@ public class MessageList
                 holder.flagged.setChecked(false);
             }
 
-            holder.subject.setTextSize(TypedValue.COMPLEX_UNIT_DIP, mFontSizes.getMessageListSubject());
-            holder.date.setTextSize(TypedValue.COMPLEX_UNIT_DIP, mFontSizes.getMessageListDate());
-
-            if (mTouchView)
-            {
-                holder.preview.setTextSize(TypedValue.COMPLEX_UNIT_DIP, mFontSizes.getMessageListSender());
-            }
-            else
-            {
-                holder.from.setTextSize(TypedValue.COMPLEX_UNIT_DIP, mFontSizes.getMessageListSender());
-            }
 
             return view;
         }
 
         /**
          * Associate model data to view object.
-         * 
+         *
          * @param position
          *            The position of the item within the adapter's data set of
          *            the item whose view we want.
@@ -2337,7 +2733,7 @@ public class MessageList
          *            Never <code>null</code>.
          */
         private void bindView(final int position, final View view, final MessageViewHolder holder,
-                final MessageInfoHolder message)
+                              final MessageInfoHolder message)
         {
             holder.subject.setTypeface(null, message.read ? Typeface.NORMAL : Typeface.BOLD);
 
@@ -2359,15 +2755,16 @@ public class MessageList
             holder.chip.getBackground().setAlpha(message.read ? 127 : 255);
             view.getBackground().setAlpha(message.downloaded ? 0 : 127);
 
-            if ((message.subject == null) || message.subject.equals(""))
+            if ((message.message.getSubject() == null) || message.message.getSubject().equals(""))
             {
                 holder.subject.setText(getText(R.string.general_no_subject));
             }
             else
             {
-                holder.subject.setText(message.subject);
+                holder.subject.setText(message.message.getSubject());
             }
 
+            int senderTypeface = message.read ? Typeface.NORMAL : Typeface.BOLD;
             if (holder.preview != null)
             {
                 /*
@@ -2377,37 +2774,55 @@ public class MessageList
                  * compose a custom view containing the preview and the
                  * from.
                  */
-                holder.preview.setText(message.sender + " " + message.preview,
+
+                holder.preview.setText(new SpannableStringBuilder(recipientSigil(message)).append(message.sender).append(" ").append(message.message.getPreview()),
                                        TextView.BufferType.SPANNABLE);
                 Spannable str = (Spannable)holder.preview.getText();
 
                 // Create our span sections, and assign a format to each.
-                str.setSpan(
-                    new TextAppearanceSpan(
-                        null,
-                        Typeface.BOLD,
-                        -1,
-                        holder.subject.getTextColors(),
-                        holder.subject.getLinkTextColors()),
-                    0,
-                    message.sender.length(),
-                    Spannable.SPAN_EXCLUSIVE_EXCLUSIVE
-                );
+                str.setSpan(new StyleSpan(senderTypeface),
+                            0,
+                            (message.sender.length()+1),
+                            Spannable.SPAN_EXCLUSIVE_EXCLUSIVE
+                           );
+                str.setSpan(new ForegroundColorSpan(Color.rgb(128,128,128)), // TODO: How do I can specify the android.R.attr.textColorTertiary
+                            (message.sender.length()+1),
+                            str.length(),
+                            Spannable.SPAN_EXCLUSIVE_EXCLUSIVE
+                           );
             }
             else
             {
-                holder.from.setText(message.sender);
-                holder.from.setTypeface(null, message.read ? Typeface.NORMAL : Typeface.BOLD);
+                holder.from.setText(new SpannableStringBuilder(recipientSigil(message)).append( message.sender));
+
+                holder.from.setTypeface(null, senderTypeface);
             }
 
-            holder.date.setText(message.date);
+            holder.date.setText(message.getDate(mMessageHelper));
             holder.subject.setCompoundDrawablesWithIntrinsicBounds(
                 message.answered ? mAnsweredIcon : null, // left
                 null, // top
-                message.hasAttachments ? mAttachmentIcon : null, // right
+                message.message.hasAttachments() ? mAttachmentIcon : null, // right
                 null); // bottom
             holder.position = position;
         }
+
+        private String recipientSigil (MessageInfoHolder message)
+        {
+            if (message.message.toMe())
+            {
+                return getString(R.string.messagelist_sent_to_me_sigil);
+            }
+            else if (message.message.ccMe())
+            {
+                return getString(R.string.messagelist_sent_cc_me_sigil);
+            }
+            else
+            {
+                return "";
+            }
+        }
+
 
         public View getFooterView(int position, View convertView, ViewGroup parent)
         {
@@ -2437,9 +2852,16 @@ public class MessageList
                 }
                 else
                 {
-                    if (mCurrentFolder.lastCheckFailed == false)
+                    if (!mCurrentFolder.lastCheckFailed)
                     {
-                        holder.main.setText(String.format(getString(R.string.load_more_messages_fmt), mAccount.getDisplayCount()));
+                        if (mAccount.getDisplayCount() == 0 )
+                        {
+                            holder.main.setText(getString(R.string.message_list_load_more_messages_action));
+                        }
+                        else
+                        {
+                            holder.main.setText(String.format(getString(R.string.load_more_messages_fmt), mAccount.getDisplayCount()));
+                        }
                     }
                     else
                     {
@@ -2475,203 +2897,8 @@ public class MessageList
         }
     }
 
-    public class MessageInfoHolder implements Comparable<MessageInfoHolder>
-    {
-        public String subject;
-        public String date;
-        public Date compareDate;
-        public String compareSubject;
-        public String sender;
-        public String compareCounterparty;
-        public String preview;
-        public String[] recipients;
-        public boolean hasAttachments;
-        public String uid;
-        public boolean read;
-        public boolean answered;
-        public boolean flagged;
-        public boolean downloaded;
-        public boolean partially_downloaded;
-        public Message message;
-        public FolderInfoHolder folder;
-        public boolean selected;
-
-        // Empty constructor for comparison
-        public MessageInfoHolder()
-        {
-            this.selected = false;
-        }
-
-        public MessageInfoHolder(Message m)
-        {
-            this();
-            Account account = m.getFolder().getAccount();
-            populate(m, new FolderInfoHolder(m.getFolder(), m.getFolder().getAccount()), account);
-        }
-
-        public MessageInfoHolder(Message m, FolderInfoHolder folder, Account account)
-        {
-            this();
-            populate(m, folder, account);
-        }
-
-        public void populate(Message m, FolderInfoHolder folder, Account account)
-        {
-            try
-            {
-                LocalMessage message = (LocalMessage) m;
-                Date date = message.getSentDate();
-                this.compareDate = message.getSentDate();
-                if (this.compareDate == null)
-                {
-                    this.compareDate = message.getInternalDate();
-                }
-
-                this.folder = folder;
-
-                if (Utility.isDateToday(date))
-                {
-                    this.date = getTimeFormat().format(date);
-                }
-                else
-                {
-                    this.date = getDateFormat().format(date);
-                }
-
-                this.hasAttachments = message.getAttachmentCount() > 0;
-
-                this.read = message.isSet(Flag.SEEN);
-                this.answered = message.isSet(Flag.ANSWERED);
-                this.flagged = message.isSet(Flag.FLAGGED);
-                this.downloaded = message.isSet(Flag.X_DOWNLOADED_FULL);
-                this.partially_downloaded = message.isSet(Flag.X_DOWNLOADED_PARTIAL);
-
-                Address[] addrs = message.getFrom();
-
-                if (addrs.length > 0 &&  account.isAnIdentity(addrs[0]))
-                {
-                    this.compareCounterparty = Address.toFriendly(message .getRecipients(RecipientType.TO));
-                    this.sender = String.format(getString(R.string.message_list_to_fmt), this.compareCounterparty);
-                }
-                else
-                {
-                    this.sender = Address.toFriendly(addrs);
-                    this.compareCounterparty = this.sender;
-                }
-
-                this.subject = message.getSubject();
-
-                this.uid = message.getUid();
-                this.message = m;
-                this.preview = message.getPreview();
-            }
-            catch (MessagingException me)
-            {
-                if (Config.LOGV)
-                {
-                    Log.v(K9.LOG_TAG, "Unable to load message info", me);
-                }
-            }
-        }
-
-        @Override
-        public boolean equals(Object o)
-        {
-            if (o instanceof MessageInfoHolder == false)
-            {
-                return false;
-            }
-            MessageInfoHolder other = (MessageInfoHolder)o;
-            return message.equals(other.message);
-        }
-
-        @Override
-        public int hashCode()
-        {
-            return uid.hashCode();
-        }
-
-        @Override
-        public int compareTo(MessageInfoHolder o)
-        {
-            int ascender = (sortAscending ? 1 : -1);
-            int comparison = 0;
-
-            if (sortType == SORT_TYPE.SORT_SUBJECT)
-            {
-                if (compareSubject == null)
-                {
-                    compareSubject = stripPrefixes(subject).toLowerCase();
-                }
-
-                if (o.compareSubject == null)
-                {
-                    o.compareSubject = stripPrefixes(o.subject).toLowerCase();
-                }
-
-                comparison = this.compareSubject.compareTo(o.compareSubject);
-            }
-            else if (sortType == SORT_TYPE.SORT_SENDER)
-            {
-                comparison = this.compareCounterparty.toLowerCase().compareTo(o.compareCounterparty.toLowerCase());
-            }
-            else if (sortType == SORT_TYPE.SORT_FLAGGED)
-            {
-                comparison = (this.flagged ? 0 : 1) - (o.flagged ? 0 : 1);
-            }
-            else if (sortType == SORT_TYPE.SORT_UNREAD)
-            {
-                comparison = (this.read ? 1 : 0) - (o.read ? 1 : 0);
-            }
-            else if (sortType == SORT_TYPE.SORT_ATTACHMENT)
-            {
-                comparison = (this.hasAttachments ? 0 : 1) - (o.hasAttachments ? 0 : 1);
-            }
-
-            if (comparison != 0)
-            {
-                return comparison * ascender;
-            }
-
-            int dateAscender = (sortDateAscending ? 1 : -1);
-
-            return this.compareDate.compareTo(o.compareDate) * dateAscender;
-        }
-
-        Pattern pattern = null;
-        String patternString = "^ *(re|aw|fw|fwd): *";
-        private String stripPrefixes(String in)
-        {
-            synchronized (patternString)
-            {
-                if (pattern == null)
-                {
-                    pattern = Pattern.compile(patternString, Pattern.CASE_INSENSITIVE);
-                }
-            }
-
-            Matcher matcher = pattern.matcher(in);
-
-            int lastPrefix = -1;
-
-            while (matcher.find())
-            {
-                lastPrefix = matcher.end();
-            }
-
-            if (lastPrefix > -1 && lastPrefix < in.length() - 1)
-            {
-                return in.substring(lastPrefix);
-            }
-            else
-            {
-                return in;
-            }
-        }
-    }
-
     class MessageViewHolder
-            implements OnCheckedChangeListener
+        implements OnCheckedChangeListener
     {
         public TextView subject;
         public TextView preview;
@@ -2705,7 +2932,7 @@ public class MessageList
                     message.selected = isChecked;
                     if (!mCheckboxes)
                     {
-                        if (isChecked == true)
+                        if (isChecked)
                         {
                             selected.setVisibility(View.VISIBLE);
                         }
@@ -2722,129 +2949,87 @@ public class MessageList
 
     private void hideBatchButtons()
     {
-        //TODO: Fade out animation
-        mBatchButtonArea.setVisibility(View.GONE);
+        if (mBatchButtonArea.getVisibility() != View.GONE)
+        {
+            mBatchButtonArea.setVisibility(View.GONE);
+            mBatchButtonArea.startAnimation(
+                AnimationUtils.loadAnimation(this, R.anim.footer_disappear));
+        }
     }
 
     private void showBatchButtons()
     {
-        //TODO: Fade in animation
-        mBatchButtonArea.setVisibility(View.VISIBLE);
+        if (mBatchButtonArea.getVisibility() != View.VISIBLE)
+        {
+            mBatchButtonArea.setVisibility(View.VISIBLE);
+            Animation animation = AnimationUtils.loadAnimation(this, R.anim.footer_appear);
+            animation.setAnimationListener(this);
+            mBatchButtonArea.startAnimation(animation);
+        }
     }
 
     private void toggleBatchButtons()
     {
-        if (mSelectedCount < 0)
-        {
-            mSelectedCount = 0;
-        }
 
-        int readButtonIconId;
-        int flagButtonIconId;
-
-        if (mSelectedCount==0)
+        runOnUiThread(new Runnable()
         {
-            readButtonIconId = R.drawable.ic_button_mark_read;
-            flagButtonIconId = R.drawable.ic_button_flag;
-            hideBatchButtons();
-        }
-        else
-        {
-            boolean newReadState = computeBatchDirection(false);
-            if (newReadState)
+            @Override
+            public void run()
             {
-                readButtonIconId = R.drawable.ic_button_mark_read;
-            }
-            else
-            {
-                readButtonIconId = R.drawable.ic_button_mark_unread;
-            }
-            boolean newFlagState = computeBatchDirection(true);
-            if (newFlagState)
-            {
-                flagButtonIconId = R.drawable.ic_button_flag;
-            }
-            else
-            {
-                flagButtonIconId = R.drawable.ic_button_unflag;
-            }
-            showBatchButtons();
-        }
 
-        mBatchReadButton.setImageResource(readButtonIconId);
-        mBatchFlagButton.setImageResource(flagButtonIconId);
+                if (mSelectedCount < 0)
+                {
+                    mSelectedCount = 0;
+                }
+
+                int readButtonIconId;
+                int flagButtonIconId;
+
+                if (mSelectedCount==0)
+                {
+                    readButtonIconId = R.drawable.ic_button_mark_read;
+                    flagButtonIconId = R.drawable.ic_button_flag;
+                    hideBatchButtons();
+                }
+                else
+                {
+                    boolean newReadState = computeBatchDirection(false);
+                    if (newReadState)
+                    {
+                        readButtonIconId = R.drawable.ic_button_mark_read;
+                    }
+                    else
+                    {
+                        readButtonIconId = R.drawable.ic_button_mark_unread;
+                    }
+                    boolean newFlagState = computeBatchDirection(true);
+                    if (newFlagState)
+                    {
+                        flagButtonIconId = R.drawable.ic_button_flag;
+                    }
+                    else
+                    {
+                        flagButtonIconId = R.drawable.ic_button_unflag;
+                    }
+                    showBatchButtons();
+                }
+
+                mBatchReadButton.setImageResource(readButtonIconId);
+                mBatchFlagButton.setImageResource(flagButtonIconId);
+
+
+            }
+        });
+
+
     }
 
-    class FooterViewHolder
+    static class FooterViewHolder
     {
         public ProgressBar progress;
         public TextView main;
     }
 
-    public class FolderInfoHolder
-    {
-        public String name;
-        public String displayName;
-        public boolean loading;
-        public boolean lastCheckFailed;
-        public Folder folder;
-
-        /**
-         * Outbox is handled differently from any other folder.
-         */
-        public boolean outbox;
-
-        public FolderInfoHolder(Folder folder, Account account)
-        {
-            populate(folder, account);
-        }
-
-        public void populate(Folder folder, Account account)
-        {
-            this.folder = folder;
-            this.name = folder.getName();
-
-            if (this.name.equalsIgnoreCase(K9.INBOX))
-            {
-                this.displayName = getString(R.string.special_mailbox_name_inbox);
-            }
-            else
-            {
-                this.displayName = this.name;
-            }
-
-            if (this.name.equals(account.getOutboxFolderName()))
-            {
-                this.displayName = String.format(getString(R.string.special_mailbox_name_outbox_fmt), this.name);
-                this.outbox = true;
-            }
-
-            if (this.name.equals(account.getDraftsFolderName()))
-            {
-                this.displayName = String.format(getString(R.string.special_mailbox_name_drafts_fmt), this.name);
-            }
-
-            if (this.name.equals(account.getTrashFolderName()))
-            {
-                this.displayName = String.format(getString(R.string.special_mailbox_name_trash_fmt), this.name);
-            }
-
-            if (this.name.equals(account.getSentFolderName()))
-            {
-                this.displayName = String.format(getString(R.string.special_mailbox_name_sent_fmt), this.name);
-            }
-
-            if (this.name.equals(account.getArchiveFolderName()))
-            {
-                this.displayName = String.format(getString(R.string.special_mailbox_name_archive_fmt), this.name);
-            }
-
-            if (this.name.equals(account.getSpamFolderName()))
-            {
-                this.displayName = String.format(getString(R.string.special_mailbox_name_spam_fmt), this.name);
-            }
-        }
-    }
 
     private boolean computeBatchDirection(boolean flagged)
     {
@@ -2960,6 +3145,20 @@ public class MessageList
         mHandler.sortMessages();
     }
 
+    public void onAnimationEnd(Animation animation)
+    {
+    }
+
+    public void onAnimationRepeat(Animation animation)
+    {
+    }
+
+    public void onAnimationStart(Animation animation)
+    {
+    }
+
+
+
     private void setAllSelected(boolean isSelected)
     {
         mSelectedCount = 0;
@@ -3035,7 +3234,7 @@ public class MessageList
 
     private void onMoveBatch()
     {
-        if (mController.isMoveCapable(mAccount) == false)
+        if (!mController.isMoveCapable(mAccount))
         {
             return;
         }
@@ -3047,7 +3246,7 @@ public class MessageList
                 if (holder.selected)
                 {
                     Message message = holder.message;
-                    if (mController.isMoveCapable(message) == false)
+                    if (!mController.isMoveCapable(message))
                     {
                         Toast toast = Toast.makeText(this,
                                                      R.string.move_copy_cannot_copy_unsynced_message, Toast.LENGTH_LONG);
@@ -3068,7 +3267,7 @@ public class MessageList
 
     private void onMoveChosenBatch(String folderName)
     {
-        if (mController.isMoveCapable(mAccount) == false)
+        if (!mController.isMoveCapable(mAccount))
         {
             return;
         }
@@ -3082,7 +3281,7 @@ public class MessageList
                 if (holder.selected)
                 {
                     Message message = holder.message;
-                    if (mController.isMoveCapable(message) == false)
+                    if (!mController.isMoveCapable(message))
                     {
                         Toast toast = Toast.makeText(this,
                                                      R.string.move_copy_cannot_copy_unsynced_message, Toast.LENGTH_LONG);
@@ -3103,7 +3302,7 @@ public class MessageList
 
     private void onArchiveBatch()
     {
-        if (mController.isMoveCapable(mAccount) == false)
+        if (!mController.isMoveCapable(mAccount))
         {
             return;
         }
@@ -3115,7 +3314,7 @@ public class MessageList
                 if (holder.selected)
                 {
                     Message message = holder.message;
-                    if (mController.isMoveCapable(message) == false)
+                    if (!mController.isMoveCapable(message))
                     {
                         Toast toast = Toast.makeText(this, R.string.move_copy_cannot_copy_unsynced_message, Toast.LENGTH_LONG);
                         toast.show();
@@ -3135,7 +3334,7 @@ public class MessageList
 
     private void onSpamBatch()
     {
-        if (mController.isMoveCapable(mAccount) == false)
+        if (!mController.isMoveCapable(mAccount))
         {
             return;
         }
@@ -3147,7 +3346,7 @@ public class MessageList
                 if (holder.selected)
                 {
                     Message message = holder.message;
-                    if (mController.isMoveCapable(message) == false)
+                    if (!mController.isMoveCapable(message))
                     {
                         Toast toast = Toast.makeText(this, R.string.move_copy_cannot_copy_unsynced_message, Toast.LENGTH_LONG);
                         toast.show();
@@ -3167,7 +3366,7 @@ public class MessageList
 
     private void onCopyBatch()
     {
-        if (mController.isCopyCapable(mAccount) == false)
+        if (!mController.isCopyCapable(mAccount))
         {
             return;
         }
@@ -3179,7 +3378,7 @@ public class MessageList
                 if (holder.selected)
                 {
                     Message message = holder.message;
-                    if (mController.isCopyCapable(message) == false)
+                    if (!mController.isCopyCapable(message))
                     {
                         Toast toast = Toast.makeText(this,
                                                      R.string.move_copy_cannot_copy_unsynced_message, Toast.LENGTH_LONG);
@@ -3200,7 +3399,7 @@ public class MessageList
 
     private void onCopyChosenBatch(String folderName)
     {
-        if (mController.isCopyCapable(mAccount) == false)
+        if (!mController.isCopyCapable(mAccount))
         {
             return;
         }
@@ -3213,7 +3412,7 @@ public class MessageList
                 if (holder.selected)
                 {
                     Message message = holder.message;
-                    if (mController.isCopyCapable(message) == false)
+                    if (!mController.isCopyCapable(message))
                     {
                         Toast toast = Toast.makeText(this,
                                                      R.string.move_copy_cannot_copy_unsynced_message, Toast.LENGTH_LONG);
@@ -3226,4 +3425,12 @@ public class MessageList
         }
         mController.copyMessages(mAccount, mCurrentFolder.name, messageList.toArray(EMPTY_MESSAGE_ARRAY), folderName, null);
     }
+
+    protected void onAccountUnavailable()
+    {
+        finish();
+        // TODO inform user about account unavailability using Toast
+        Accounts.listAccounts(this);
+    }
+
 }

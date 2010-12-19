@@ -50,6 +50,11 @@ public class K9Activity extends Activity
         {
             locale = Locale.getDefault();
         }
+        else if (language.length() == 5 && language.charAt(2) == '_')
+        {
+            // language is in the form: en_US
+            locale = new Locale(language.substring(0, 2), language.substring(3));
+        }
         else
         {
             locale = new Locale(language);
@@ -93,11 +98,11 @@ public class K9Activity extends Activity
     {
         return mDateFormat;
     }
-    protected void onNext(boolean animate)
+    protected void onNext()
     {
 
     }
-    protected void onPrevious(boolean animate)
+    protected void onPrevious()
     {
     }
 
@@ -148,11 +153,11 @@ public class K9Activity extends Activity
                     // right to left swipe
                     if (e1.getX() - e2.getX() > min_distance && Math.abs(velocityX) > min_velocity)
                     {
-                        onNext(true);
+                        onNext();
                     }
                     else if (e2.getX() - e1.getX() > min_distance && Math.abs(velocityX) > min_velocity)
                     {
-                        onPrevious(true);
+                        onPrevious();
                     }
                 }
                 catch (Exception e)

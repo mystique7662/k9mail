@@ -86,6 +86,7 @@ public class RemoteControlService extends CoreService
                         Account[] accounts = preferences.getAccounts();
                         for (Account account : accounts)
                         {
+                            //warning: account may not be isAvailable()
                             if (allAccounts || account.getUuid().equals(uuid))
                             {
 
@@ -105,11 +106,11 @@ public class RemoteControlService extends CoreService
                                 }
                                 if (ringEnabled != null)
                                 {
-                                    account.setRing(Boolean.parseBoolean(ringEnabled));
+                                    account.getNotificationSetting().setRing(Boolean.parseBoolean(ringEnabled));
                                 }
                                 if (vibrateEnabled != null)
                                 {
-                                    account.setVibrate(Boolean.parseBoolean(vibrateEnabled));
+                                    account.getNotificationSetting().setVibrate(Boolean.parseBoolean(vibrateEnabled));
                                 }
                                 if (pushClasses != null)
                                 {
