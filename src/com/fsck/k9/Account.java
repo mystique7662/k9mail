@@ -161,7 +161,7 @@ public class Account implements BaseAccount
     protected Account(Context context)
     {
         mUuid = UUID.randomUUID().toString();
-        mLocalStorageProviderId = StorageManager.getInstance(K9.app).getDefaultProviderId();
+        mLocalStorageProviderId = null; // StorageManager.getInstance(K9.app).getDefaultProviderId();
         mAutomaticCheckIntervalMinutes = -1;
         mIdleRefreshMinutes = 24;
         mSaveAllHeaders = true;

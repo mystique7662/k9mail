@@ -322,44 +322,6 @@ public class K9 extends Application
     public static void setServicesEnabled(Context context, boolean enabled, Integer wakeLockId)
     {
 
-        PackageManager pm = context.getPackageManager();
-
-        if (!enabled && pm.getComponentEnabledSetting(new ComponentName(context, MailService.class)) ==
-                PackageManager.COMPONENT_ENABLED_STATE_ENABLED)
-        {
-            /*
-             * If no accounts now exist but the service is still enabled we're about to disable it
-             * so we'll reschedule to kill off any existing alarms.
-             */
-            MailService.actionReset(context, wakeLockId);
-        }
-        Class<?>[] classes = { MessageCompose.class, BootReceiver.class, MailService.class };
-
-        for (Class<?> clazz : classes)
-        {
-
-            boolean alreadyEnabled = pm.getComponentEnabledSetting(new ComponentName(context, clazz)) ==
-                                     PackageManager.COMPONENT_ENABLED_STATE_ENABLED;
-
-            if (enabled != alreadyEnabled)
-            {
-                pm.setComponentEnabledSetting(
-                    new ComponentName(context, clazz),
-                    enabled ? PackageManager.COMPONENT_ENABLED_STATE_ENABLED :
-                    PackageManager.COMPONENT_ENABLED_STATE_DISABLED,
-                    PackageManager.DONT_KILL_APP);
-            }
-        }
-
-        if (enabled && pm.getComponentEnabledSetting(new ComponentName(context, MailService.class)) ==
-                PackageManager.COMPONENT_ENABLED_STATE_ENABLED)
-        {
-            /*
-             * And now if accounts do exist then we've just enabled the service and we want to
-             * schedule alarms for the new accounts.
-             */
-            MailService.actionReset(context, wakeLockId);
-        }
     }
 
     /**
@@ -369,47 +331,6 @@ public class K9 extends Application
      */
     protected void registerReceivers()
     {
-        final StorageGoneReceiver receiver = new StorageGoneReceiver();
-        final IntentFilter filter = new IntentFilter();
-        filter.addAction(Intent.ACTION_MEDIA_EJECT);
-        filter.addAction(Intent.ACTION_MEDIA_UNMOUNTED);
-        filter.addDataScheme("file");
-
-        final BlockingQueue<Handler> queue = new SynchronousQueue<Handler>();
-
-        // starting a new thread to handle unmount events
-        new Thread(new Runnable()
-        {
-            @Override
-            public void run()
-            {
-                Looper.prepare();
-                try
-                {
-                    queue.put(new Handler());
-                }
-                catch (InterruptedException e)
-                {
-                    Log.e(K9.LOG_TAG, "", e);
-                }
-                Looper.loop();
-            }
-
-        }, "Unmount-thread").start();
-
-        try
-        {
-            final Handler storageGoneHandler = queue.take();
-            registerReceiver(receiver, filter, null, storageGoneHandler);
-            Log.i(K9.LOG_TAG, "Registered: unmount receiver");
-        }
-        catch (InterruptedException e)
-        {
-            Log.e(K9.LOG_TAG, "Unable to register unmount receiver", e);
-        }
-
-        registerReceiver(new ShutdownReceiver(), new IntentFilter(Intent.ACTION_SHUTDOWN));
-        Log.i(K9.LOG_TAG, "Registered: shutdown receiver");
     }
 
     public static void save(SharedPreferences.Editor editor)
